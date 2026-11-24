@@ -1,5 +1,5 @@
 // Pure layout helpers for cajonera-card. No DOM, no dependencies: tested with
-// `node --test homeassistant/www/tests/`.
+// `node --test tests/frontend/cajonera-layout.test.mjs`.
 //
 // Grid convention (docs/09_gestion_inventario.md section 3.1): the base is the
 // bottom-left drawer at (0, 0) = "A1"; rows grow upwards, columns rightwards.
@@ -49,4 +49,57 @@ export function gridCells(cajones) {
     abierto: Boolean(c.abierto),
   }));
   return { cols, rows, cells, unplaced };
+}
+
+export const debounceMs = 300;
+export const minChars = 2;
+
+const QTY_PATTERN = /^\d+(?:[.,]\d+)?$/;
+
+export function parseQty(text, { allowZero = false } = {}) {
+  // Accepts "2,5" and "2.5"; anything else (empty, letters, sign) is rejected.
+  const t = String(text ?? "").trim();
+  if (!QTY_PATTERN.test(t)) return null;
+  const n = Number(t.replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  if (n === 0) return allowZero ? 0 : null;
+  return n;
+}
+
+const MAX_SERVER_ROWS = 8;
+
+export function suggestionRows(sugerencias, texto) {
+  // Server rows first (capped), then a "create" row when the text is new.
+  const all = Array.isArray(sugerencias) ? sugerencias : [];
+  const rows = all.slice(0, MAX_SERVER_ROWS);
+  const nombre = String(texto ?? "").trim();
+  if (nombre.length < minChars) return rows;
+  // Check the full server list, not the capped one: an exact match past the cap still counts.
+  const lower = nombre.toLowerCase();
+  const exists = all.some((r) => String(r.nombre ?? "").trim().toLowerCase() === lower);
+  return exists ? rows : [...rows, { crear: true, nombre }];
+}
+
+export function createSequencer() {
+  // Lets an async caller drop answers that were superseded by a newer request.
+  let latest = 0;
+  return {
+    next() {
+      latest += 1;
+      return latest;
+    },
+    accept(n) {
+      return n === latest;
+    },
+  };
+}
+
+export function defaultDrawer(cajones) {
+  // Address holding the largest quantity; the first one wins on ties.
+  if (!Array.isArray(cajones) || cajones.length === 0) return null;
+  let best = cajones[0];
+  for (const c of cajones) {
+    if (Number(c.cantidad) > Number(best.cantidad)) best = c;
+  }
+  return best.direccion;
 }

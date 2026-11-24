@@ -1,7 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fmtQty, gridCells, rowLabel } from "../../custom_components/cajonera/frontend/cajonera-layout.js";
+import {
+  debounceMs,
+  defaultDrawer,
+  createSequencer,
+  fmtQty,
+  gridCells,
+  minChars,
+  parseQty,
+  rowLabel,
+  suggestionRows,
+} from "../../custom_components/cajonera/frontend/cajonera-layout.js";
 
 const d = (direccion, nombre, x, y, extra = {}) => ({ direccion, nombre, x, y, ancho: 1, alto: 1, ...extra });
 
@@ -65,4 +75,88 @@ test("fmtQty rounds float noise and never uses exponents", () => {
   assert.equal(fmtQty(0.3 - 0.1), "0,2");
   assert.equal(fmtQty(1000000.5), "1000000,5");
   assert.equal(fmtQty(1e21), "1000000000000000000000");
+});
+
+test("parseQty accepts comma or dot decimals", () => {
+  assert.equal(parseQty("2,5"), 2.5);
+  assert.equal(parseQty("2.5"), 2.5);
+  assert.equal(parseQty("10"), 10);
+  assert.equal(parseQty("  4  "), 4);
+});
+
+test("parseQty rejects empty, non-numeric and negative input", () => {
+  assert.equal(parseQty(""), null);
+  assert.equal(parseQty("   "), null);
+  assert.equal(parseQty("abc"), null);
+  assert.equal(parseQty("-1"), null);
+});
+
+test("parseQty rejects zero unless allowZero", () => {
+  assert.equal(parseQty("0"), null);
+  assert.equal(parseQty("0", { allowZero: true }), 0);
+});
+
+test("suggestionRows adds Crear only when there is no exact match and text has >= 2 chars", () => {
+  const sugerencias = [{ nombre: "Tornillo M4" }, { nombre: "Tuerca" }];
+  const partial = suggestionRows(sugerencias, "Tornillo");
+  assert.equal(partial.length, 3);
+  assert.deepEqual(partial.at(-1), { crear: true, nombre: "Tornillo" });
+
+  const exact = suggestionRows(sugerencias, "tornillo m4");
+  assert.equal(exact.length, 2);
+  assert.equal(exact.some((r) => r.crear), false);
+
+  const fresh = suggestionRows(sugerencias, "  Arandela ");
+  assert.deepEqual(fresh.at(-1), { crear: true, nombre: "Arandela" });
+  assert.equal(fresh.length, 3);
+});
+
+test("suggestionRows does not offer Crear for a single character", () => {
+  const rows = suggestionRows([], "a");
+  assert.deepEqual(rows, []);
+  assert.deepEqual(suggestionRows([], "ab"), [{ crear: true, nombre: "ab" }]);
+});
+
+test("suggestionRows does not offer Crear when the exact match is past the 8-row cap", () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ nombre: `item ${i}` }));
+  const rows = suggestionRows(many, "ITEM 11");
+  assert.equal(rows.length, 8);
+  assert.equal(rows.some((r) => r.crear), false);
+});
+
+test("suggestionRows keeps at most 8 server rows", () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ nombre: `item ${i}` }));
+  const rows = suggestionRows(many, "item");
+  assert.equal(rows.length, 9);
+  assert.equal(rows.filter((r) => !r.crear).length, 8);
+  assert.deepEqual(rows.at(-1), { crear: true, nombre: "item" });
+});
+
+test("acceptAnswer: only the latest sequence value is accepted", () => {
+  const seq = createSequencer();
+  const a = seq.next();
+  const b = seq.next();
+  assert.equal(seq.accept(a), false);
+  assert.equal(seq.accept(b), true);
+});
+
+test("defaultDrawer picks the address with the most quantity", () => {
+  assert.equal(
+    defaultDrawer([
+      { direccion: 3, cantidad: 2 },
+      { direccion: 7, cantidad: 40 },
+      { direccion: 9, cantidad: 5 },
+    ]),
+    7,
+  );
+});
+
+test("defaultDrawer returns null when there are no drawers", () => {
+  assert.equal(defaultDrawer([]), null);
+  assert.equal(defaultDrawer(undefined), null);
+});
+
+test("debounce and minimum-length constants", () => {
+  assert.equal(debounceMs, 300);
+  assert.equal(minChars, 2);
 });
