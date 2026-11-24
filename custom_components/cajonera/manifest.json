@@ -1,0 +1,12 @@
+{
+  "domain": "cajonera",
+  "name": "Cajonera",
+  "version": "0.1.0",
+  "iot_class": "local_polling",
+  "integration_type": "service",
+  "dependencies": [
+    "persistent_notification"
+  ],
+  "requirements": [],
+  "codeowners": []
+}

@@ -1,0 +1,13 @@
+# Copy into your Home Assistant configuration.yaml.
+# The token goes in secrets.yaml:  inventree_token: "<token of the HA user in InvenTree>"
+# Use the LOCAL address of InvenTree: Home Assistant does not go through the tunnel.
+
+cajonera:
+  inventree_url: http://192.168.1.10:8000
+  inventree_token: !secret inventree_token
+  simulated_drawers:            # remove once the real controller exists
+    - {address: 0,  x: 0, y: 0}            # A1, the base
+    - {address: 3,  x: 1, y: 0}            # A2
+    - {address: 4,  x: 2, y: 0}            # A3
+    - {address: 17, x: 0, y: 1, width: 2}  # B1, double drawer (B1-B2)
+    - {address: 21, x: 2, y: 1}            # B3

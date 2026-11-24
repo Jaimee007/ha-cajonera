@@ -1,0 +1,85 @@
+inventario_buscar:
+  fields:
+    texto:
+      required: true
+      example: "tornillos m3"
+      selector:
+        text:
+    origen:
+      example: panel
+      selector:
+        select:
+          options: [panel, alexa]
+
+inventario_retirar:
+  fields:
+    texto:
+      example: "tornillos m3"
+      selector:
+        text:
+    cantidad:
+      example: 3
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    cajon:
+      example: B3
+      selector:
+        text:
+    stock:
+      example: 9
+      selector:
+        number:
+          min: 1
+          max: 100000000
+          mode: box
+    origen:
+      example: panel
+      selector:
+        select:
+          options: [panel, alexa]
+
+contenido_cajon:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+
+identificar:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+
+sincronizar_ubicaciones:
+
+redescubrir:
+
+simular_apertura:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+    abierto:
+      required: true
+      example: true
+      selector:
+        boolean:
