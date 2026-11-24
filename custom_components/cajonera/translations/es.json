@@ -4,30 +4,61 @@
       "name": "Buscar en el inventario",
       "description": "Busca una pieza en InvenTree, dice en qué cajón está y lo enciende.",
       "fields": {
-        "texto": {"name": "Texto", "description": "Lo que buscas, por ejemplo \"tornillos m3\"."},
-        "origen": {"name": "Origen", "description": "panel o alexa."}
+        "texto": {
+          "name": "Texto",
+          "description": "Lo que buscas, por ejemplo \"tornillos m3\"."
+        },
+        "origen": {
+          "name": "Origen",
+          "description": "panel o alexa."
+        }
       }
     },
     "inventario_retirar": {
       "name": "Retirar existencias",
       "description": "Descuenta unidades en InvenTree. Por voz, con texto; desde el panel, con la existencia exacta.",
       "fields": {
-        "texto": {"name": "Texto", "description": "Pieza, por ejemplo \"tornillos m3\". Vacío: la última buscada (2 min)."},
-        "cantidad": {"name": "Cantidad", "description": "Unidades que has cogido."},
-        "cajon": {"name": "Cajón", "description": "Nombre del cajón (B3) si la pieza está en varios."},
-        "stock": {"name": "Existencia", "description": "Identificador de la existencia en InvenTree (lo usa el panel)."},
-        "origen": {"name": "Origen", "description": "panel o alexa."}
+        "texto": {
+          "name": "Texto",
+          "description": "Pieza, por ejemplo \"tornillos m3\". Vacío: la última buscada (2 min)."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Unidades que has cogido."
+        },
+        "cajon": {
+          "name": "Cajón",
+          "description": "Nombre del cajón (B3) si la pieza está en varios."
+        },
+        "stock": {
+          "name": "Existencia",
+          "description": "Identificador de la existencia en InvenTree (lo usa el panel)."
+        },
+        "origen": {
+          "name": "Origen",
+          "description": "panel o alexa."
+        }
       }
     },
     "contenido_cajon": {
       "name": "Contenido de un cajón",
       "description": "Lista lo que hay en un cajón.",
-      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
     },
     "identificar": {
       "name": "Identificar cajón",
       "description": "Hace parpadear un cajón.",
-      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
     },
     "sincronizar_ubicaciones": {
       "name": "Sincronizar ubicaciones",
@@ -41,8 +72,192 @@
       "name": "Simular apertura",
       "description": "Solo con cajones simulados: abre o cierra un cajón.",
       "fields": {
-        "direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."},
-        "abierto": {"name": "Abierto", "description": "true para abrir, false para cerrar."}
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        },
+        "abierto": {
+          "name": "Abierto",
+          "description": "true para abrir, false para cerrar."
+        }
+      }
+    },
+    "sugerir": {
+      "name": "Sugerir piezas",
+      "description": "Sugiere piezas mientras se escribe, sin encender ningún cajón.",
+      "fields": {
+        "texto": {
+          "name": "Texto",
+          "description": "Lo que se ha escrito hasta ahora."
+        }
+      }
+    },
+    "pieza": {
+      "name": "Ficha de pieza",
+      "description": "Devuelve la ficha de una pieza, enciende sus cajones y la recuerda como última pieza.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        }
+      }
+    },
+    "inventario_anadir": {
+      "name": "Añadir existencias",
+      "description": "Suma unidades de una pieza en un cajón.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        },
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Unidades que se añaden."
+        }
+      }
+    },
+    "inventario_actualizar": {
+      "name": "Actualizar existencias",
+      "description": "Fija la cantidad real de una pieza en un cajón (recuento).",
+      "fields": {
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        },
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Cantidad contada; 0 deja el cajón vacío."
+        }
+      }
+    },
+    "inventario_mover": {
+      "name": "Mover existencias",
+      "description": "Mueve una pieza de un cajón a otro.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        },
+        "desde": {
+          "name": "Desde",
+          "description": "Dirección del cajón de origen."
+        },
+        "hasta": {
+          "name": "Hasta",
+          "description": "Dirección del cajón de destino."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Unidades a mover. Vacío: todas."
+        }
+      }
+    },
+    "categorias": {
+      "name": "Listar categorías",
+      "description": "Devuelve las categorías de piezas de InvenTree."
+    },
+    "categoria_crear": {
+      "name": "Crear categoría",
+      "description": "Crea una categoría de piezas, o devuelve la que ya existe con ese nombre.",
+      "fields": {
+        "nombre": {
+          "name": "Nombre",
+          "description": "Nombre de la categoría."
+        },
+        "padre": {
+          "name": "Categoría padre",
+          "description": "Identificador de la categoría padre. Vacío: en la raíz."
+        }
+      }
+    },
+    "sugerir_cajon": {
+      "name": "Sugerir cajón",
+      "description": "Sugiere dónde guardar una pieza nueva de una categoría y enciende ese cajón.",
+      "fields": {
+        "categoria": {
+          "name": "Categoría",
+          "description": "Identificador de la categoría."
+        }
+      }
+    },
+    "pieza_crear": {
+      "name": "Crear pieza",
+      "description": "Crea una pieza con su cantidad inicial en un cajón.",
+      "fields": {
+        "nombre": {
+          "name": "Nombre",
+          "description": "Nombre de la pieza."
+        },
+        "categoria": {
+          "name": "Categoría",
+          "description": "Identificador de la categoría."
+        },
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón donde se guarda."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Cantidad inicial."
+        },
+        "ipn": {
+          "name": "IPN",
+          "description": "Referencia interna."
+        },
+        "descripcion": {
+          "name": "Descripción",
+          "description": "Descripción de la pieza."
+        },
+        "palabras_clave": {
+          "name": "Palabras clave",
+          "description": "Palabras para encontrarla al buscar."
+        },
+        "minimo": {
+          "name": "Mínimo",
+          "description": "Existencias mínimas antes de avisar de que quedan pocas."
+        }
+      }
+    },
+    "pieza_editar": {
+      "name": "Editar pieza",
+      "description": "Cambia solo los datos indicados de una pieza.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        },
+        "nombre": {
+          "name": "Nombre",
+          "description": "Nuevo nombre."
+        },
+        "descripcion": {
+          "name": "Descripción",
+          "description": "Nueva descripción."
+        },
+        "categoria": {
+          "name": "Categoría",
+          "description": "Identificador de la nueva categoría."
+        },
+        "palabras_clave": {
+          "name": "Palabras clave",
+          "description": "Nuevas palabras clave."
+        },
+        "ipn": {
+          "name": "IPN",
+          "description": "Nueva referencia interna."
+        },
+        "minimo": {
+          "name": "Mínimo",
+          "description": "Nuevas existencias mínimas."
+        }
       }
     }
   }

@@ -4,30 +4,61 @@
       "name": "Buscar en el inventario",
       "description": "Busca una pieza en InvenTree, dice en qué cajón está y lo enciende.",
       "fields": {
-        "texto": {"name": "Texto", "description": "Lo que buscas, por ejemplo \"tornillos m3\"."},
-        "origen": {"name": "Origen", "description": "panel o alexa."}
+        "texto": {
+          "name": "Texto",
+          "description": "Lo que buscas, por ejemplo \"tornillos m3\"."
+        },
+        "origen": {
+          "name": "Origen",
+          "description": "panel o alexa."
+        }
       }
     },
     "inventario_retirar": {
       "name": "Retirar existencias",
       "description": "Descuenta unidades en InvenTree. Por voz, con texto; desde el panel, con la existencia exacta.",
       "fields": {
-        "texto": {"name": "Texto", "description": "Pieza, por ejemplo \"tornillos m3\". Vacío: la última buscada (2 min)."},
-        "cantidad": {"name": "Cantidad", "description": "Unidades que has cogido."},
-        "cajon": {"name": "Cajón", "description": "Nombre del cajón (B3) si la pieza está en varios."},
-        "stock": {"name": "Existencia", "description": "Identificador de la existencia en InvenTree (lo usa el panel)."},
-        "origen": {"name": "Origen", "description": "panel o alexa."}
+        "texto": {
+          "name": "Texto",
+          "description": "Pieza, por ejemplo \"tornillos m3\". Vacío: la última buscada (2 min)."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Unidades que has cogido."
+        },
+        "cajon": {
+          "name": "Cajón",
+          "description": "Nombre del cajón (B3) si la pieza está en varios."
+        },
+        "stock": {
+          "name": "Existencia",
+          "description": "Identificador de la existencia en InvenTree (lo usa el panel)."
+        },
+        "origen": {
+          "name": "Origen",
+          "description": "panel o alexa."
+        }
       }
     },
     "contenido_cajon": {
       "name": "Contenido de un cajón",
       "description": "Lista lo que hay en un cajón.",
-      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
     },
     "identificar": {
       "name": "Identificar cajón",
       "description": "Hace parpadear un cajón.",
-      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
     },
     "sincronizar_ubicaciones": {
       "name": "Sincronizar ubicaciones",
@@ -41,8 +72,192 @@
       "name": "Simular apertura",
       "description": "Solo con cajones simulados: abre o cierra un cajón.",
       "fields": {
-        "direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."},
-        "abierto": {"name": "Abierto", "description": "true para abrir, false para cerrar."}
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        },
+        "abierto": {
+          "name": "Abierto",
+          "description": "true para abrir, false para cerrar."
+        }
+      }
+    },
+    "sugerir": {
+      "name": "Suggest parts",
+      "description": "Suggests parts while typing, without lighting any drawer.",
+      "fields": {
+        "texto": {
+          "name": "Text",
+          "description": "What has been typed so far."
+        }
+      }
+    },
+    "pieza": {
+      "name": "Part sheet",
+      "description": "Returns a part's sheet, lights its drawers and remembers it as the last part.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        }
+      }
+    },
+    "inventario_anadir": {
+      "name": "Add stock",
+      "description": "Adds units of a part to a drawer.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        },
+        "direccion": {
+          "name": "Address",
+          "description": "Drawer address (0 = base)."
+        },
+        "cantidad": {
+          "name": "Quantity",
+          "description": "Units to add."
+        }
+      }
+    },
+    "inventario_actualizar": {
+      "name": "Update stock",
+      "description": "Sets the real quantity of a part in a drawer (a count).",
+      "fields": {
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        },
+        "direccion": {
+          "name": "Address",
+          "description": "Drawer address (0 = base)."
+        },
+        "cantidad": {
+          "name": "Quantity",
+          "description": "Counted quantity; 0 leaves the drawer empty."
+        }
+      }
+    },
+    "inventario_mover": {
+      "name": "Move stock",
+      "description": "Moves a part from one drawer to another.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        },
+        "desde": {
+          "name": "From",
+          "description": "Address of the source drawer."
+        },
+        "hasta": {
+          "name": "To",
+          "description": "Address of the destination drawer."
+        },
+        "cantidad": {
+          "name": "Quantity",
+          "description": "Units to move. Empty: all of them."
+        }
+      }
+    },
+    "categorias": {
+      "name": "List categories",
+      "description": "Returns the InvenTree part categories."
+    },
+    "categoria_crear": {
+      "name": "Create category",
+      "description": "Creates a part category, or returns the existing one with that name.",
+      "fields": {
+        "nombre": {
+          "name": "Name",
+          "description": "Category name."
+        },
+        "padre": {
+          "name": "Parent category",
+          "description": "Parent category id. Empty: at the top level."
+        }
+      }
+    },
+    "sugerir_cajon": {
+      "name": "Suggest drawer",
+      "description": "Suggests where to store a new part of a category and lights that drawer.",
+      "fields": {
+        "categoria": {
+          "name": "Category",
+          "description": "Category id."
+        }
+      }
+    },
+    "pieza_crear": {
+      "name": "Create part",
+      "description": "Creates a part with its initial quantity in a drawer.",
+      "fields": {
+        "nombre": {
+          "name": "Name",
+          "description": "Part name."
+        },
+        "categoria": {
+          "name": "Category",
+          "description": "Category id."
+        },
+        "direccion": {
+          "name": "Address",
+          "description": "Address of the drawer it is stored in."
+        },
+        "cantidad": {
+          "name": "Quantity",
+          "description": "Initial quantity."
+        },
+        "ipn": {
+          "name": "IPN",
+          "description": "Internal part number."
+        },
+        "descripcion": {
+          "name": "Description",
+          "description": "Part description."
+        },
+        "palabras_clave": {
+          "name": "Keywords",
+          "description": "Words that help find it when searching."
+        },
+        "minimo": {
+          "name": "Minimum",
+          "description": "Minimum stock before it is reported as running low."
+        }
+      }
+    },
+    "pieza_editar": {
+      "name": "Edit part",
+      "description": "Changes only the given details of a part.",
+      "fields": {
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        },
+        "nombre": {
+          "name": "Name",
+          "description": "New name."
+        },
+        "descripcion": {
+          "name": "Description",
+          "description": "New description."
+        },
+        "categoria": {
+          "name": "Category",
+          "description": "New category id."
+        },
+        "palabras_clave": {
+          "name": "Keywords",
+          "description": "New keywords."
+        },
+        "ipn": {
+          "name": "IPN",
+          "description": "New internal part number."
+        },
+        "minimo": {
+          "name": "Minimum",
+          "description": "New minimum stock."
+        }
       }
     }
   }

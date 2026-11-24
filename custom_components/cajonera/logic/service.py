@@ -12,12 +12,23 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
+from .catalog import (
+    NAME_REQUIRED,
+    create_category,
+    create_part,
+    edit_part,
+    list_categories,
+    part_sheet,
+    suggest,
+    suggest_drawer,
+)
 from .context import context_after_search
 from .inventree import InvenTreeError
 from .low_stock import LowStockReport, low_stock_report
 from .models import Location
 from .search import DOWN_PHRASE, drawer_contents, search
 from .simulator import DrawerSimulator
+from .stock_ops import INVALID_QTY, MAYBE_STOCK, OpResult, add_to_drawer, count_drawer, move_between
 from .sync import apply_sync, plan_sync
 from .withdraw import ASK_QTY, MAYBE_DONE, Context, withdraw_by_stock, withdraw_by_text
 
@@ -225,3 +236,130 @@ class Cajonera:
 
         # A manual sync may legitimately take longer than a voice answer.
         return await self._bounded(run(), {"avisos": ["La sincronización sigue en curso."]})
+
+    # Inventory card: suggestions, part sheet, stock writes and catalog
+
+    async def sugerir(self, texto: str | None) -> dict:
+        return await self._bounded(self._sugerir(texto), {"sugerencias": []})
+
+    async def _sugerir(self, texto: str | None) -> dict:
+        if not await self._ready():
+            return {"sugerencias": []}
+        # Typing into the card must never light a drawer or touch the context.
+        return {"sugerencias": await suggest(self.api, texto or "", self.locations)}
+
+    async def pieza(self, pieza_pk: int) -> dict:
+        return await self._bounded(self._pieza(pieza_pk), {"frase": DOWN_PHRASE})
+
+    async def _pieza(self, pieza_pk: int) -> dict:
+        if not await self._ready():
+            return {"frase": DOWN_PHRASE}
+        sheet = await part_sheet(self.api, pieza_pk, self.locations)
+        if "frase" in sheet:
+            return sheet
+        addresses = [row["direccion"] for row in sheet["cajones"]]
+        location_pk = None
+        if len(addresses) == 1:
+            location_pk = next((pk for pk, loc in self.locations.items() if loc.address == addresses[0]), None)
+        self.context = Context(pieza_pk, location_pk, self.now())
+        if addresses:
+            self.simulator.search(addresses, set(addresses) if sheet["bajo"] else set())
+        return sheet
+
+    async def anadir(self, pieza_pk: int, direccion: int, cantidad: float | None) -> dict:
+        if cantidad is None or cantidad <= 0:
+            return {"frase": INVALID_QTY, "hecho": False}
+        return await self._write(lambda: add_to_drawer(self.api, pieza_pk, direccion, cantidad, self.locations))
+
+    async def actualizar(self, pieza_pk: int, direccion: int, cantidad: float | None) -> dict:
+        if cantidad is None or cantidad < 0:
+            return {"frase": INVALID_QTY, "hecho": False}
+        return await self._write(lambda: count_drawer(self.api, pieza_pk, direccion, cantidad, self.locations))
+
+    async def mover(self, pieza_pk: int, desde: int, hasta: int, cantidad: float | None = None) -> dict:
+        if cantidad is not None and cantidad <= 0:
+            return {"frase": INVALID_QTY, "hecho": False}
+        return await self._write(lambda: move_between(self.api, pieza_pk, desde, hasta, cantidad, self.locations))
+
+    async def pieza_crear(
+        self,
+        nombre: str | None,
+        categoria: int,
+        direccion: int,
+        cantidad: float | None,
+        ipn: str = "",
+        descripcion: str = "",
+        palabras_clave: str = "",
+        minimo: float = 0,
+    ) -> dict:
+        if not (nombre or "").strip():
+            return {"frase": NAME_REQUIRED, "hecho": False, "pieza_pk": None}
+        return await self._write(
+            lambda: create_part(
+                self.api,
+                nombre,
+                categoria,
+                direccion,
+                cantidad,
+                self.locations,
+                ipn=ipn or "",
+                description=descripcion or "",
+                keywords=palabras_clave or "",
+                minimum=minimo or 0,
+            ),
+            with_part_pk=True,
+        )
+
+    async def pieza_editar(self, pieza_pk: int, **changes) -> dict:
+        # None means "not provided" (an unfilled slot); an empty string clears a field.
+        changes = {key: value for key, value in changes.items() if value is not None}
+        return await self._write(lambda: edit_part(self.api, pieza_pk, changes))
+
+    async def _write(self, op, with_part_pk: bool = False) -> dict:
+        """Run a stock or catalog write under the deadline and apply its side effects."""
+        timeout = {"frase": MAYBE_STOCK, "hecho": False}
+        if with_part_pk:
+            timeout["pieza_pk"] = None
+        return await self._bounded(self._write_inner(op, with_part_pk), timeout)
+
+    async def _write_inner(self, op, with_part_pk: bool) -> dict:
+        if not await self._ready():
+            answer = {"frase": DOWN_PHRASE, "hecho": False}
+            if with_part_pk:
+                answer["pieza_pk"] = None
+            return answer
+        result: OpResult = await op()
+        if result.done:
+            if result.address is not None:
+                self.simulator.confirm(result.address, result.low)
+            if result.part_pk is not None and result.location_pk is not None:
+                self.context = Context(result.part_pk, result.location_pk, self.now())
+            asyncio.get_running_loop().create_task(self.refresh_low())
+        answer = {"frase": result.phrase, "hecho": result.done}
+        if with_part_pk:
+            answer["pieza_pk"] = result.part_pk
+        return answer
+
+    async def categorias(self) -> dict:
+        return await self._bounded(self._categorias(), {"categorias": []})
+
+    async def _categorias(self) -> dict:
+        return {"categorias": await list_categories(self.api)}
+
+    async def categoria_crear(self, nombre: str | None, padre: int | None = None) -> dict:
+        row = await self._bounded(create_category(self.api, nombre, padre), {"frase": MAYBE_STOCK})
+        return row if "frase" in row else {"categoria": row}
+
+    async def sugerir_cajon(self, categoria: int) -> dict:
+        down = {"direccion": None, "cajon": None, "motivo": DOWN_PHRASE}
+        return await self._bounded(self._sugerir_cajon(categoria, down), down)
+
+    async def _sugerir_cajon(self, categoria: int, down: dict) -> dict:
+        if not await self._ready():
+            return down
+        answer = await suggest_drawer(
+            self.api, categoria, self.root_pk, self.simulator.drawers(), self.locations
+        )
+        if answer["direccion"] is not None:
+            self.simulator.store_here(answer["direccion"])
+        return answer

@@ -74,6 +74,17 @@ CONFIG_SCHEMA = vol.Schema(
 ORIGIN = vol.In(["alexa", "panel"])
 ADDRESS = vol.All(vol.Coerce(int), vol.Range(min=0, max=31))
 OPTIONAL_TEXT = vol.Any(None, cv.string)  # an unfilled Alexa slot arrives as None
+ID = vol.Coerce(int)
+QUANTITY = vol.Any(None, vol.Coerce(float))
+# `pieza_editar` fields; each is optional and only the ones given are changed.
+EDIT_FIELDS = {
+    "nombre": OPTIONAL_TEXT,
+    "descripcion": OPTIONAL_TEXT,
+    "categoria": vol.Any(None, ID),
+    "palabras_clave": OPTIONAL_TEXT,
+    "ipn": OPTIONAL_TEXT,
+    "minimo": QUANTITY,
+}
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -147,6 +158,47 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def sincronizar(call: ServiceCall) -> ServiceResponse:
         return await cajonera.sincronizar()
 
+    async def sugerir(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.sugerir(call.data.get("texto"))
+
+    async def pieza(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.pieza(call.data["pieza_pk"])
+
+    async def anadir(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.anadir(call.data["pieza_pk"], call.data["direccion"], call.data.get("cantidad"))
+
+    async def actualizar(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.actualizar(call.data["pieza_pk"], call.data["direccion"], call.data.get("cantidad"))
+
+    async def mover(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.mover(call.data["pieza_pk"], call.data["desde"], call.data["hasta"], call.data.get("cantidad"))
+
+    async def categorias(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.categorias()
+
+    async def categoria_crear(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.categoria_crear(call.data.get("nombre"), call.data.get("padre"))
+
+    async def sugerir_cajon(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.sugerir_cajon(call.data["categoria"])
+
+    async def pieza_crear(call: ServiceCall) -> ServiceResponse:
+        return await cajonera.pieza_crear(
+            call.data.get("nombre"),
+            call.data["categoria"],
+            call.data["direccion"],
+            call.data.get("cantidad"),
+            ipn=call.data.get("ipn"),
+            descripcion=call.data.get("descripcion"),
+            palabras_clave=call.data.get("palabras_clave"),
+            minimo=call.data.get("minimo"),
+        )
+
+    async def pieza_editar(call: ServiceCall) -> ServiceResponse:
+        # Only the keys the caller provided are changed.
+        changes = {key: call.data[key] for key in EDIT_FIELDS if key in call.data}
+        return await cajonera.pieza_editar(call.data["pieza_pk"], **changes)
+
     async def simular_apertura(call: ServiceCall) -> None:
         cajonera.simulator.set_open(call.data["direccion"], call.data["abierto"])
 
@@ -189,4 +241,90 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         "simular_apertura",
         simular_apertura,
         schema=vol.Schema({vol.Required("direccion"): ADDRESS, vol.Required("abierto"): cv.boolean}),
+    )
+
+    # Inventory card
+    hass.services.async_register(
+        DOMAIN,
+        "sugerir",
+        sugerir,
+        schema=vol.Schema({vol.Optional("texto"): OPTIONAL_TEXT}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "pieza",
+        pieza,
+        schema=vol.Schema({vol.Required("pieza_pk"): ID}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    stock_fields = {vol.Required("pieza_pk"): ID, vol.Required("direccion"): ADDRESS, vol.Optional("cantidad"): QUANTITY}
+    hass.services.async_register(
+        DOMAIN,
+        "inventario_anadir",
+        anadir,
+        schema=vol.Schema(stock_fields),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "inventario_actualizar",
+        actualizar,
+        schema=vol.Schema(stock_fields),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "inventario_mover",
+        mover,
+        schema=vol.Schema(
+            {
+                vol.Required("pieza_pk"): ID,
+                vol.Required("desde"): ADDRESS,
+                vol.Required("hasta"): ADDRESS,
+                vol.Optional("cantidad"): QUANTITY,
+            }
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(DOMAIN, "categorias", categorias, supports_response=SupportsResponse.ONLY)
+    hass.services.async_register(
+        DOMAIN,
+        "categoria_crear",
+        categoria_crear,
+        schema=vol.Schema({vol.Optional("nombre"): OPTIONAL_TEXT, vol.Optional("padre"): vol.Any(None, ID)}),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "sugerir_cajon",
+        sugerir_cajon,
+        schema=vol.Schema({vol.Required("categoria"): ID}),
+        # It lights a drawer, but the card calls it for the answer.
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "pieza_crear",
+        pieza_crear,
+        schema=vol.Schema(
+            {
+                vol.Optional("nombre"): OPTIONAL_TEXT,
+                vol.Required("categoria"): ID,
+                vol.Required("direccion"): ADDRESS,
+                vol.Optional("cantidad"): QUANTITY,
+                vol.Optional("ipn"): OPTIONAL_TEXT,
+                vol.Optional("descripcion"): OPTIONAL_TEXT,
+                vol.Optional("palabras_clave"): OPTIONAL_TEXT,
+                vol.Optional("minimo"): QUANTITY,
+            }
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "pieza_editar",
+        pieza_editar,
+        schema=vol.Schema({vol.Required("pieza_pk"): ID, **{vol.Optional(k): v for k, v in EDIT_FIELDS.items()}}),
+        supports_response=SupportsResponse.OPTIONAL,
     )

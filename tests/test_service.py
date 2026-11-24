@@ -3,9 +3,10 @@
 import asyncio
 from datetime import datetime
 
-from logic.models import Drawer, Location, Part, StockItem
+from logic.models import Category, Drawer, Location, Part, StockItem
 from logic.service import Cajonera
 from logic.simulator import DrawerSimulator
+from logic.withdraw import Context
 from fakes import FakeInventory
 
 NOW = datetime(2026, 11, 24, 12, 0, 0)
@@ -189,3 +190,161 @@ async def test_withdraw_last_unit_keeps_item_and_search_says_none_left():
     assert r["hecho"]
     assert 10 in fake.stock and fake.stock[10].quantity == 0
     assert (await caj.buscar("huevos"))["frase"] == "Tenías Huevos en el B1, pero no queda ninguno."
+
+
+def _modes(caj):
+    return {s.drawer.address: s.mode for s in caj.simulator.states()}
+
+
+async def test_sugerir_has_no_side_effects():
+    caj = make(stocked())
+    r = await caj.sugerir("m3")
+    assert [s["nombre"] for s in r["sugerencias"]] == ["Tornillo M3x8"]
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.context is None
+
+
+async def test_pieza_lights_drawers_and_sets_context():
+    caj = make(stocked())
+    sheet = await caj.pieza(5)
+    assert sheet["nombre"] == "Tornillo M3x8"
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
+    assert caj.context == Context(5, 1001, NOW)
+
+
+async def test_pieza_with_two_drawers_has_no_location_in_context():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 50, 40)],
+                         [StockItem(9, 5, "", 25.0, 1001), StockItem(10, 5, "", 15.0, 1002)], [])
+    caj = make(fake)
+    await caj.pieza(5)
+    assert _modes(caj) == {0: "buscado_bajo", 17: "buscado_bajo"}
+    assert caj.context == Context(5, None, NOW)
+
+
+async def test_pieza_down_changes_nothing():
+    fake = stocked()
+    fake.fail = True
+    caj = make(fake)
+    sheet = await caj.pieza(5)
+    assert sheet == {"frase": "No puedo consultar el inventario ahora mismo."}
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.context is None
+
+
+async def test_anadir_confirms_on_drawer():
+    fake = stocked()
+    caj = make(fake)
+    r = await caj.anadir(5, 0, 10)
+    assert r["hecho"] and "50" in r["frase"]
+    assert fake.added == [(9, 10)]
+    assert _modes(caj)[0] == "confirmar_ok"
+    assert caj.context == Context(5, 1001, NOW)
+
+
+async def test_bad_quantity_answers_without_inventree():
+    fake = stocked()
+    fake.fail = True
+    caj = make(fake)
+    assert await caj.anadir(5, 0, 0) == {"frase": "Dime una cantidad válida.", "hecho": False}
+    assert await caj.anadir(5, 0, None) == {"frase": "Dime una cantidad válida.", "hecho": False}
+    assert await caj.actualizar(5, 0, -1) == {"frase": "Dime una cantidad válida.", "hecho": False}
+    assert await caj.mover(5, 0, 17, 0) == {"frase": "Dime una cantidad válida.", "hecho": False}
+    assert not caj.synced
+
+
+async def test_actualizar_and_mover_set_context_to_the_destination():
+    fake = stocked()
+    caj = make(fake)
+    r = await caj.actualizar(5, 0, 30)
+    assert r["hecho"] and fake.counted == [(9, 30)]
+    r = await caj.mover(5, 0, 17)
+    assert r["hecho"]
+    assert _modes(caj)[17] == "confirmar_ok"
+    assert caj.context == Context(5, 1002, NOW)
+
+
+async def test_write_timeout_says_maybe_stock():
+    fake = stocked()
+    caj = make(fake, deadline=0.2)
+    await caj.sync()
+    orig = fake.add_stock
+
+    async def slow_add(*a):
+        await asyncio.sleep(0.5)
+        await orig(*a)
+
+    fake.add_stock = slow_add
+    expected = {"frase": "No sé si se ha registrado. Revisa la cantidad antes de repetirlo.", "hecho": False}
+    assert await caj.anadir(5, 0, 1) == expected
+    orig_create = fake.create_part
+
+    async def slow_create(*a, **kw):
+        await asyncio.sleep(0.5)
+        return await orig_create(*a, **kw)
+
+    fake.create_part = slow_create
+    assert await caj.pieza_crear("Nueva", 3, 0, 1) == {**expected, "pieza_pk": None}
+    assert (await caj.pieza_crear("  ", 3, 0, 1))["frase"] == "Dime un nombre para la pieza."
+
+
+async def test_write_failure_changes_no_light_or_context():
+    fake = stocked()
+    caj = make(fake)
+    await caj.sync()
+    fake.fail_on = {"add_stock"}
+    r = await caj.anadir(5, 0, 1)
+    assert not r["hecho"]
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.context is None
+
+
+async def test_sugerir_cajon_lights_store_here():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, 1001)], [])
+    fake.parts[5] = Part(5, "Tornillo M3x8", 0, 40, category_pk=3)
+    caj = make(fake)
+    r = await caj.sugerir_cajon(3)
+    assert r["direccion"] == 0 and r["cajon"] == "A1"
+    assert _modes(caj) == {0: "guardar", 17: "reposo"}
+
+
+async def test_sugerir_cajon_down_lights_nothing():
+    fake = stocked()
+    fake.fail = True
+    caj = make(fake)
+    r = await caj.sugerir_cajon(3)
+    assert r == {"direccion": None, "cajon": None, "motivo": "No puedo consultar el inventario ahora mismo."}
+    assert set(_modes(caj).values()) == {"reposo"}
+
+
+async def test_pieza_crear_then_sugerir_finds_it():
+    fake = FakeInventory([], [], [], [Category(3, "Tornillos", "Tornillos")])
+    caj = make(fake)
+    r = await caj.pieza_crear("Tuerca M4", 3, 17, 25, ipn="T-M4", minimo=5)
+    assert r["hecho"] and r["pieza_pk"] is not None
+    assert _modes(caj)[17] == "confirmar_ok"
+    assert caj.context == Context(r["pieza_pk"], 1002, NOW)
+    found = (await caj.sugerir("tuerca"))["sugerencias"]
+    assert [(s["pieza_pk"], s["cajones"]) for s in found] == [(r["pieza_pk"], ["B1"])]
+    assert fake.created_parts[0].minimum_stock == 5
+
+
+async def test_pieza_editar_passes_only_given_keys_and_has_no_drawer():
+    fake = stocked()
+    caj = make(fake)
+    r = await caj.pieza_editar(5, nombre="Tornillo M3x10", minimo=7)
+    assert r["hecho"]
+    assert fake.patched == [(5, {"name": "Tornillo M3x10", "minimum_stock": 7.0})]
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.context is None
+
+
+async def test_categorias_and_categoria_crear():
+    fake = FakeInventory([], [], [], [Category(3, "Tornillos", "Tornillos")])
+    caj = make(fake)
+    assert (await caj.categorias())["categorias"] == [{"pk": 3, "nombre": "Tornillos", "ruta": "Tornillos"}]
+    r = await caj.categoria_crear("Métricos", 3)
+    assert r["categoria"]["ruta"] == "Tornillos/Métricos"
+    assert (await caj.categoria_crear("  "))["frase"] == "Dime un nombre para la categoría."
+    fake.fail = True
+    assert (await caj.categorias()) == {"categorias": []}
+    assert (await caj.sugerir("tuerca")) == {"sugerencias": []}
