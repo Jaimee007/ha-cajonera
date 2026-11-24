@@ -37,6 +37,10 @@ class Part:
     name: str
     minimum_stock: float
     total_stock: float
+    ipn: str = ""
+    category_pk: int | None = None
+    description: str = ""
+    keywords: str = ""
 
     @property
     def is_low(self) -> bool:
@@ -51,3 +55,13 @@ class StockItem:
     part_name: str
     quantity: float
     location_pk: int | None
+    delete_on_deplete: bool = True
+
+
+@dataclass(frozen=True)
+class Category:
+    """A part category. `path` is the full path string, e.g. "Ferreteria/Tornillos"."""
+
+    pk: int
+    name: str
+    path: str

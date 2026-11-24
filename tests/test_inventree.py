@@ -6,7 +6,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from logic.inventree import InvenTreeClient, InvenTreeError
-from logic.models import Location, Part, StockItem
+from logic.models import Category, Location, Part, StockItem
 
 
 class FakeServer:
@@ -200,3 +200,163 @@ async def test_metadata_uses_generic_endpoint_not_the_redirecting_one(srv, clien
     srv.add("PATCH", "/api/metadata/stocklocation/20/", {})
     await client.create_location(3, "C3", 17)
     assert [r[1] for r in srv.calls("PATCH")] == ["/api/metadata/stocklocation/20/"]
+
+
+# Stock operations
+
+
+async def test_add_stock_posts_items_and_notes(srv, client):
+    srv.add("POST", "/api/stock/add/", {})
+    await client.add_stock(9, 4, "cajonera: alta")
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/stock/add/")
+    assert body == {"items": [{"pk": 9, "quantity": 4}], "notes": "cajonera: alta"}
+
+
+async def test_count_stock_posts_items_and_notes(srv, client):
+    srv.add("POST", "/api/stock/count/", {})
+    await client.count_stock(9, 12, "cajonera: recuento")
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/stock/count/")
+    assert body == {"items": [{"pk": 9, "quantity": 12}], "notes": "cajonera: recuento"}
+
+
+async def test_transfer_stock_posts_location(srv, client):
+    srv.add("POST", "/api/stock/transfer/", {})
+    await client.transfer_stock(9, 3, 11, "cajonera: mover")
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/stock/transfer/")
+    assert body == {"items": [{"pk": 9, "quantity": 3}], "location": 11, "notes": "cajonera: mover"}
+
+
+async def test_merge_stock_posts_items_and_flags(srv, client):
+    srv.add("POST", "/api/stock/merge/", {})
+    await client.merge_stock([9, 10, 12], 11, "cajonera: fusion")
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/stock/merge/")
+    assert body == {
+        "items": [{"item": 9}, {"item": 10}, {"item": 12}],
+        "location": 11,
+        "notes": "cajonera: fusion",
+        "allow_mismatched_suppliers": True,
+        "allow_mismatched_status": True,
+    }
+
+
+async def test_create_stock_posts_and_maps_item(srv, client):
+    srv.add("POST", "/api/stock/", {
+        "pk": 30, "part": 5, "quantity": "7.0", "location": 11, "delete_on_deplete": False,
+        "part_detail": {"name": "M3"}})
+    item = await client.create_stock(5, 11, 7)
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/stock/")
+    assert body == {"part": 5, "location": 11, "quantity": 7, "delete_on_deplete": False}
+    assert item == StockItem(30, 5, "M3", 7.0, 11, False)
+
+
+async def test_set_keep_when_empty_patches_delete_on_deplete(srv, client):
+    srv.add("PATCH", "/api/stock/9/", {})
+    await client.set_keep_when_empty(9)
+    ((method, path, _, _, body),) = srv.calls("PATCH")
+    assert (method, path) == ("PATCH", "/api/stock/9/")
+    assert body == {"delete_on_deplete": False}
+
+
+async def test_stock_maps_delete_on_deplete_defaulting_to_true(srv, client):
+    srv.add("GET", "/api/stock/9/", {"pk": 9, "part": 5, "quantity": 4, "location": 11, "delete_on_deplete": False})
+    srv.add("GET", "/api/stock/10/", {"pk": 10, "part": 5, "quantity": 4, "location": 11})
+    assert (await client.get_stock(9)).delete_on_deplete is False
+    assert (await client.get_stock(10)).delete_on_deplete is True
+
+
+async def test_stock_in_category_uses_part_category_filter(srv, client):
+    srv.add("GET", "/api/stock/", [
+        {"pk": 9, "part": 5, "part_detail": {"name": "M3"}, "quantity": 4, "location": 11}])
+    items = await client.stock_in_category(8, 3)
+    ((_, path, query, _, _),) = srv.calls("GET")
+    assert path == "/api/stock/"
+    assert query == {"part_category": "8", "location": "3", "cascade": "true", "part_detail": "true"}
+    assert items == [StockItem(9, 5, "M3", 4.0, 11)]
+
+
+# Parts and categories
+
+
+async def test_part_maps_ipn_category_keywords(srv, client):
+    srv.add("GET", "/api/part/5/", {
+        "pk": 5, "name": "M3", "minimum_stock": 1, "total_in_stock": 4,
+        "IPN": "SCR-M3", "category": 8, "description": "Tornillo", "keywords": "tornillo m3"})
+    srv.add("GET", "/api/part/6/", {
+        "pk": 6, "name": "M4", "minimum_stock": 0, "total_in_stock": 0,
+        "IPN": None, "category": None, "description": None, "keywords": None})
+    assert await client.get_part(5) == Part(5, "M3", 1.0, 4.0, "SCR-M3", 8, "Tornillo", "tornillo m3")
+    assert await client.get_part(6) == Part(6, "M4", 0.0, 0.0, "", None, "", "")
+
+
+async def test_create_part_posts_initial_stock(srv, client):
+    srv.add("POST", "/api/part/", {
+        "pk": 40, "name": "M5", "minimum_stock": 2, "total_in_stock": 0, "IPN": "SCR-M5",
+        "category": 8, "description": "Tornillo M5", "keywords": "m5"})
+    part = await client.create_part(
+        "M5", 8, 11, 25, ipn="SCR-M5", description="Tornillo M5", keywords="m5", minimum=2)
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/part/")
+    assert body == {
+        "name": "M5", "category": 8, "IPN": "SCR-M5", "description": "Tornillo M5", "keywords": "m5",
+        "minimum_stock": 2, "component": True, "active": True,
+        "initial_stock": {"quantity": 25, "location": 11},
+    }
+    assert part == Part(40, "M5", 2.0, 0.0, "SCR-M5", 8, "Tornillo M5", "m5")
+
+
+async def test_create_part_defaults(srv, client):
+    srv.add("POST", "/api/part/", {"pk": 41, "name": "X"})
+    await client.create_part("X", 8, 11, 1)
+    ((_, _, _, _, body),) = srv.calls("POST")
+    assert body["IPN"] == "" and body["description"] == "" and body["keywords"] == ""
+    assert body["minimum_stock"] == 0
+
+
+async def test_update_part_patches_given_fields(srv, client):
+    srv.add("PATCH", "/api/part/5/", {})
+    await client.update_part(5, name="M3 nuevo", minimum_stock=4, IPN="SCR")
+    ((method, path, _, _, body),) = srv.calls("PATCH")
+    assert (method, path) == ("PATCH", "/api/part/5/")
+    assert body == {"name": "M3 nuevo", "minimum_stock": 4, "IPN": "SCR"}
+
+
+async def test_update_part_rejects_unknown_fields(srv, client):
+    with pytest.raises(ValueError):
+        await client.update_part(5, active=False)
+    assert srv.requests == []
+
+
+async def test_categories_use_pathstring(srv, client):
+    srv.add("GET", "/api/part/category/", [
+        {"pk": 8, "name": "Tornillos", "pathstring": "Ferreteria/Tornillos"},
+        {"pk": 9, "name": "Tuercas"}])
+    assert await client.categories() == [
+        Category(8, "Tornillos", "Ferreteria/Tornillos"), Category(9, "Tuercas", "Tuercas")]
+
+
+async def test_create_category_posts_name_and_parent(srv, client):
+    srv.add("POST", "/api/part/category/", {"pk": 12, "name": "Tuercas", "pathstring": "Ferreteria/Tuercas"})
+    cat = await client.create_category("Tuercas", parent_pk=8)
+    ((method, path, _, _, body),) = srv.calls("POST")
+    assert (method, path) == ("POST", "/api/part/category/")
+    assert body == {"name": "Tuercas", "parent": 8}
+    assert cat == Category(12, "Tuercas", "Ferreteria/Tuercas")
+
+
+async def test_create_category_without_parent_omits_it(srv, client):
+    srv.add("POST", "/api/part/category/", {"pk": 13, "name": "Raiz"})
+    cat = await client.create_category("Raiz")
+    ((_, _, _, _, body),) = srv.calls("POST")
+    assert body == {"name": "Raiz"}
+    assert cat == Category(13, "Raiz", "Raiz")
+
+
+async def test_new_write_endpoints_raise_inventree_error_on_http_error(srv, client):
+    srv.add("POST", "/api/stock/add/", {}, status=400)
+    with pytest.raises(InvenTreeError):
+        await client.add_stock(9, 1, "x")

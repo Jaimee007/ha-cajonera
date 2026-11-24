@@ -15,7 +15,7 @@ from typing import Any
 
 import aiohttp
 
-from .models import Location, Part, StockItem
+from .models import Category, Location, Part, StockItem
 from .naming import ROOT_LOCATION
 
 
@@ -57,6 +57,10 @@ def _part(d: dict) -> Part:
         name=d["name"],
         minimum_stock=float(d.get("minimum_stock") or 0),
         total_stock=float(total or 0),
+        ipn=d.get("IPN") or "",
+        category_pk=d.get("category"),
+        description=d.get("description") or "",
+        keywords=d.get("keywords") or "",
     )
 
 
@@ -69,7 +73,16 @@ def _stock(d: dict) -> StockItem:
         part_name=detail.get("name", ""),
         quantity=float(d.get("quantity") or 0),
         location_pk=d.get("location"),
+        delete_on_deplete=bool(d.get("delete_on_deplete", True)),
     )
+
+
+@_mapped
+def _category(d: dict) -> Category:
+    return Category(pk=d["pk"], name=d["name"], path=d.get("pathstring") or d["name"])
+
+
+_PART_UPDATE_FIELDS = frozenset({"name", "description", "category", "keywords", "IPN", "minimum_stock"})
 
 
 class InvenTreeClient:
@@ -111,6 +124,52 @@ class InvenTreeClient:
         data = await self._request("GET", "/api/part/", params={"low_stock": "true", "active": "true"})
         return [_part(d) for d in _results(data)]
 
+    async def create_part(
+        self,
+        name: str,
+        category_pk: int,
+        location_pk: int,
+        quantity: float,
+        ipn: str = "",
+        description: str = "",
+        keywords: str = "",
+        minimum: float = 0,
+    ) -> Part:
+        data = await self._request(
+            "POST",
+            "/api/part/",
+            json={
+                "name": name,
+                "category": category_pk,
+                "IPN": ipn,
+                "description": description,
+                "keywords": keywords,
+                "minimum_stock": minimum,
+                "component": True,
+                "active": True,
+                "initial_stock": {"quantity": quantity, "location": location_pk},
+            },
+        )
+        return _part(data)
+
+    async def update_part(self, pk: int, **fields: Any) -> None:
+        unknown = set(fields) - _PART_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"cannot update part fields: {sorted(unknown)}")
+        await self._request("PATCH", f"/api/part/{pk}/", json=fields)
+
+    # Categories
+
+    async def categories(self) -> list[Category]:
+        data = await self._request("GET", "/api/part/category/")
+        return [_category(d) for d in _results(data)]
+
+    async def create_category(self, name: str, parent_pk: int | None = None) -> Category:
+        body: dict[str, Any] = {"name": name}
+        if parent_pk is not None:
+            body["parent"] = parent_pk
+        return _category(await self._request("POST", "/api/part/category/", json=body))
+
     # Stock
 
     async def stock_for_part(self, part_pk: int) -> list[StockItem]:
@@ -130,6 +189,56 @@ class InvenTreeClient:
         await self._request(
             "POST", "/api/stock/remove/", json={"items": [{"pk": stock_pk, "quantity": quantity}], "notes": notes}
         )
+
+    async def add_stock(self, stock_pk: int, quantity: float, notes: str) -> None:
+        await self._request(
+            "POST", "/api/stock/add/", json={"items": [{"pk": stock_pk, "quantity": quantity}], "notes": notes}
+        )
+
+    async def count_stock(self, stock_pk: int, quantity: float, notes: str) -> None:
+        await self._request(
+            "POST", "/api/stock/count/", json={"items": [{"pk": stock_pk, "quantity": quantity}], "notes": notes}
+        )
+
+    async def transfer_stock(self, stock_pk: int, quantity: float, location_pk: int, notes: str) -> None:
+        await self._request(
+            "POST",
+            "/api/stock/transfer/",
+            json={"items": [{"pk": stock_pk, "quantity": quantity}], "location": location_pk, "notes": notes},
+        )
+
+    async def merge_stock(self, stock_pks: list[int], location_pk: int, notes: str) -> None:
+        await self._request(
+            "POST",
+            "/api/stock/merge/",
+            json={
+                "items": [{"item": pk} for pk in stock_pks],
+                "location": location_pk,
+                "notes": notes,
+                "allow_mismatched_suppliers": True,
+                "allow_mismatched_status": True,
+            },
+        )
+
+    async def create_stock(self, part_pk: int, location_pk: int, quantity: float) -> StockItem:
+        data = await self._request(
+            "POST",
+            "/api/stock/",
+            json={"part": part_pk, "location": location_pk, "quantity": quantity, "delete_on_deplete": False},
+        )
+        return _stock(data)
+
+    async def set_keep_when_empty(self, stock_pk: int) -> None:
+        await self._request("PATCH", f"/api/stock/{stock_pk}/", json={"delete_on_deplete": False})
+
+    async def stock_in_category(self, category_pk: int, root_pk: int) -> list[StockItem]:
+        # `part_category`, not `category`: InvenTree 1.7.3 answers HTTP 400 to the latter.
+        data = await self._request(
+            "GET",
+            "/api/stock/",
+            params={"part_category": category_pk, "location": root_pk, "cascade": "true", "part_detail": "true"},
+        )
+        return [_stock(d) for d in _results(data)]
 
     # Locations
 
