@@ -71,3 +71,24 @@ async def test_apply_sync_calls_api_in_order():
     await apply_sync(fake, FakeInventory.ROOT_PK, plan)
     assert fake.renamed == [(1, "_dir18"), (2, "_dir17"), (1, "C1"), (2, "B1")]
     assert [(loc.name, loc.address) for loc in fake.created] == [("A2", 19)]
+
+
+def test_location_left_without_address_is_adopted_not_duplicated():
+    """A sync that died between creating a location and saving its address leaves an
+    address-less location with the drawer's name. The next sync must adopt it."""
+    from logic.sync import SetAddress
+    plan = plan_sync([Drawer(0, 0, 0), Drawer(3, 1, 0)], [Location(2, "A1", None)])
+    assert plan.actions == [SetAddress(2, 0), Create("A2", 3)]
+    assert plan.notices == ["Cajón 0 asociado a la ubicación A1.", "Cajón 3 añadido como A2."]
+
+
+def test_unrelated_location_without_address_is_not_adopted():
+    plan = plan_sync([Drawer(0, 0, 0)], [Location(2, "Estantería", None)])
+    assert plan.actions == [Create("A1", 0)]
+
+
+async def test_apply_sync_sets_address():
+    from logic.sync import SetAddress
+    fake = FakeInventory(locations=[Location(2, "A1", None)])
+    await apply_sync(fake, FakeInventory.ROOT_PK, SyncPlan([SetAddress(2, 0)], []))
+    assert fake.locations[2] == Location(2, "A1", 0)

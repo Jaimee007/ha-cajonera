@@ -84,6 +84,10 @@ class FakeInventory:
         self.created.append(loc)
         return loc
 
+    async def set_location_address(self, pk: int, address: int) -> None:
+        await self._io("set_location_address")
+        self.locations[pk] = replace(self.locations[pk], address=address)
+
     async def rename_location(self, pk: int, name: str) -> None:
         await self._io("rename_location")
         self.locations[pk] = replace(self.locations[pk], name=name)

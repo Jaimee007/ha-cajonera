@@ -131,15 +131,15 @@ async def test_ensure_root_creates_when_missing(srv, client):
 
 async def test_child_locations_reads_address_from_metadata(srv, client):
     srv.add("GET", "/api/stock/location/", [{"pk": 11, "name": "B3"}, {"pk": 12, "name": "Otro"}])
-    srv.add("GET", "/api/stock/location/11/metadata/", {"metadata": {"cajonera": {"direccion": 17}}})
-    srv.add("GET", "/api/stock/location/12/metadata/", {"metadata": None})
+    srv.add("GET", "/api/metadata/stocklocation/11/", {"metadata": {"cajonera": {"direccion": 17}}})
+    srv.add("GET", "/api/metadata/stocklocation/12/", {"metadata": None})
     assert await client.child_locations(3) == [Location(11, "B3", 17), Location(12, "Otro", None)]
     assert srv.calls("GET")[0][2] == {"parent": "3"}
 
 
 async def test_create_location_sets_metadata(srv, client):
     srv.add("POST", "/api/stock/location/", {"pk": 20, "name": "C3"})
-    srv.add("PATCH", "/api/stock/location/20/metadata/", {})
+    srv.add("PATCH", "/api/metadata/stocklocation/20/", {})
     assert await client.create_location(3, "C3", 17) == Location(20, "C3", 17)
     ((_, _, _, _, post),) = srv.calls("POST")
     ((_, _, _, _, patch),) = srv.calls("PATCH")
@@ -191,3 +191,12 @@ async def test_unexpected_shape_raises_inventree_error(srv, client):
     srv.add("GET", "/api/part/", [{"unexpected": True}])
     with pytest.raises(InvenTreeError):
         await client.search_parts("m3")
+
+
+async def test_metadata_uses_generic_endpoint_not_the_redirecting_one(srv, client):
+    """InvenTree 1.x answers the legacy /api/stock/location/<pk>/metadata/ with a
+    301, and a PATCH that follows a 301 becomes a GET: the address was never saved."""
+    srv.add("POST", "/api/stock/location/", {"pk": 20, "name": "C3"})
+    srv.add("PATCH", "/api/metadata/stocklocation/20/", {})
+    await client.create_location(3, "C3", 17)
+    assert [r[1] for r in srv.calls("PATCH")] == ["/api/metadata/stocklocation/20/"]

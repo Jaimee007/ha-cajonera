@@ -19,6 +19,13 @@ from .models import Location, Part, StockItem
 from .naming import ROOT_LOCATION
 
 
+def _metadata_path(location_pk: int) -> str:
+    # Generic metadata endpoint. The older /api/stock/location/<pk>/metadata/ answers
+    # 301 on InvenTree 1.x, and a PATCH that follows a 301 turns into a GET, so the
+    # address would silently never be saved.
+    return f"/api/metadata/stocklocation/{location_pk}/"
+
+
 class InvenTreeError(Exception):
     """InvenTree could not be reached or answered with an error."""
 
@@ -143,7 +150,7 @@ class InvenTreeClient:
         data = await self._request("GET", "/api/stock/location/", params={"parent": parent_pk})
         rows = _results(data)
         metas = await asyncio.gather(
-            *(self._request("GET", f"/api/stock/location/{d['pk']}/metadata/") for d in rows)
+            *(self._request("GET", _metadata_path(d["pk"])) for d in rows)
         )
         out = []
         for d, meta in zip(rows, metas):
@@ -153,12 +160,11 @@ class InvenTreeClient:
 
     async def create_location(self, parent_pk: int, name: str, address: int) -> Location:
         created = await self._request("POST", "/api/stock/location/", json={"name": name, "parent": parent_pk})
-        await self._request(
-            "PATCH",
-            f"/api/stock/location/{created['pk']}/metadata/",
-            json={"metadata": {"cajonera": {"direccion": address}}},
-        )
+        await self.set_location_address(created["pk"], address)
         return Location(created["pk"], name, address)
+
+    async def set_location_address(self, pk: int, address: int) -> None:
+        await self._request("PATCH", _metadata_path(pk), json={"metadata": {"cajonera": {"direccion": address}}})
 
     async def rename_location(self, pk: int, name: str) -> None:
         await self._request("PATCH", f"/api/stock/location/{pk}/", json={"name": name})

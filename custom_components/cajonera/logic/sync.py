@@ -26,8 +26,16 @@ class Rename:
 
 
 @dataclass(frozen=True)
+class SetAddress:
+    """Tie an existing, address-less location to a drawer (adopt it)."""
+
+    pk: int
+    address: int
+
+
+@dataclass(frozen=True)
 class SyncPlan:
-    actions: list[Create | Rename] = field(default_factory=list)
+    actions: list[Create | Rename | SetAddress] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
 
 
@@ -42,6 +50,10 @@ def _wanted_name(drawer: Drawer) -> str | None:
 
 def plan_sync(drawers: list[Drawer], locations: list[Location]) -> SyncPlan:
     by_address = {loc.address: loc for loc in locations if loc.address is not None}
+    # Locations whose address was never saved (a sync that died half-way) can be
+    # adopted by name, so a retry does not create a second "A1".
+    orphans = {loc.name: loc for loc in locations if loc.address is None}
+    adopts: list[SetAddress] = []
     creates: list[Create] = []
     renames: list[tuple[Location, str]] = []
     notices: list[str] = []
@@ -55,7 +67,11 @@ def plan_sync(drawers: list[Drawer], locations: list[Location]) -> SyncPlan:
             notices.append(f"Cajón {drawer.address}: error de montaje ({error}), no se sincroniza.")
             continue
         loc = by_address.get(drawer.address)
-        if loc is None:
+        if loc is None and wanted in orphans:
+            orphan = orphans.pop(wanted)
+            adopts.append(SetAddress(orphan.pk, drawer.address))
+            notices.append(f"Cajón {drawer.address} asociado a la ubicación {wanted}.")
+        elif loc is None:
             creates.append(Create(wanted, drawer.address))
             notices.append(f"Cajón {drawer.address} añadido como {wanted}.")
         elif loc.name != wanted:
@@ -72,7 +88,8 @@ def plan_sync(drawers: list[Drawer], locations: list[Location]) -> SyncPlan:
 
     renames.sort(key=lambda r: r[0].pk)  # deterministic order
     # Two passes so that two drawers swapping places never share a name.
-    actions: list[Create | Rename] = [Rename(loc.pk, temp_name(loc.address)) for loc, _ in renames]
+    actions: list[Create | Rename | SetAddress] = list(adopts)
+    actions += [Rename(loc.pk, temp_name(loc.address)) for loc, _ in renames]
     actions += [Rename(loc.pk, wanted) for loc, wanted in renames]
     actions += creates
     return SyncPlan(actions, notices)
@@ -82,5 +99,7 @@ async def apply_sync(api, root_pk: int, plan: SyncPlan) -> None:
     for action in plan.actions:
         if isinstance(action, Rename):
             await api.rename_location(action.pk, action.name)
+        elif isinstance(action, SetAddress):
+            await api.set_location_address(action.pk, action.address)
         else:
             await api.create_location(root_pk, action.name, action.address)
