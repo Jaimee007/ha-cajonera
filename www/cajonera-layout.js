@@ -20,9 +20,10 @@ export function rowLabel(y) {
 }
 
 export function fmtQty(q) {
+  // Same rule as the Python side: up to 3 decimals, decimal comma, no exponents.
   const n = Number(q);
-  if (Number.isInteger(n)) return String(n);
-  return String(n).replace(".", ",");
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString("es-ES", { maximumFractionDigits: 3, useGrouping: false });
 }
 
 const placed = (c) => Number.isInteger(c.x) && Number.isInteger(c.y) && c.x >= 0 && c.y >= 0;

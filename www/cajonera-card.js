@@ -67,6 +67,10 @@ class CajoneraCard extends HTMLElement {
     this._contents = null; // { cajon, piezas }
     this._busy = false;
     this._stamp = "";
+    // UI state that must survive re-renders (each sensor update rebuilds the DOM).
+    this._qty = {}; // stock pk -> chosen quantity
+    this._query = "";
+    this._focus = null; // { start, end } when the search box had focus
   }
 
   setConfig(config) {
@@ -149,7 +153,10 @@ class CajoneraCard extends HTMLElement {
   }
 
   _qtyPicker(stock) {
-    const opts = [1, 2, 3, 4, 5, 10].map((n) => `<option value="${n}">${n}</option>`).join("");
+    const chosen = String(this._qty[stock] ?? "1");
+    const opts = [1, 2, 3, 4, 5, 10]
+      .map((n) => `<option value="${n}" ${String(n) === chosen ? "selected" : ""}>${n}</option>`)
+      .join("");
     return `<select data-qty="${stock}" aria-label="Cantidad">${opts}<option value="other">otra…</option></select>
       <button data-withdraw="${stock}" ${this._busy ? "disabled" : ""}>Retirar</button>`;
   }
@@ -200,7 +207,13 @@ class CajoneraCard extends HTMLElement {
     if (!this._hass) return;
     const map = this._hass.states[MAP];
     const low = this._hass.states[LOW];
-    const query = this.shadowRoot.querySelector("input")?.value ?? "";
+    const input = this.shadowRoot.querySelector("input");
+    if (input) {
+      this._query = input.value;
+      this._focus =
+        this.shadowRoot.activeElement === input ? { start: input.selectionStart, end: input.selectionEnd } : null;
+    }
+    const query = this._query;
 
     const contents = this._contents
       ? `<h3>Cajón ${esc(this._contents.cajon ?? "?")}</h3>
@@ -235,6 +248,17 @@ class CajoneraCard extends HTMLElement {
 
   _bind() {
     const root = this.shadowRoot;
+    const input = root.querySelector("input");
+    input.addEventListener("input", () => (this._query = input.value));
+    if (this._focus) {
+      input.focus();
+      input.setSelectionRange(this._focus.start, this._focus.end);
+    }
+    root.querySelectorAll("select[data-qty]").forEach((sel) =>
+      sel.addEventListener("change", () => {
+        if (sel.value !== "other") this._qty[sel.dataset.qty] = sel.value;
+      }),
+    );
     root.querySelector("form").addEventListener("submit", (e) => {
       e.preventDefault();
       const text = root.querySelector("input").value.trim();

@@ -30,6 +30,19 @@ def _results(data: Any) -> list[dict]:
     return data
 
 
+def _mapped(fn):
+    """Turn an unexpected payload shape into InvenTreeError instead of KeyError/TypeError."""
+
+    def wrapper(d):
+        try:
+            return fn(d)
+        except (KeyError, TypeError, ValueError, AttributeError) as err:
+            raise InvenTreeError(f"unexpected InvenTree payload: {err!r}") from err
+
+    return wrapper
+
+
+@_mapped
 def _part(d: dict) -> Part:
     total = d.get("total_in_stock", d.get("in_stock", 0))
     return Part(
@@ -40,6 +53,7 @@ def _part(d: dict) -> Part:
     )
 
 
+@_mapped
 def _stock(d: dict) -> StockItem:
     detail = d.get("part_detail") or {}
     return StockItem(
@@ -73,7 +87,8 @@ class InvenTreeClient:
                 if resp.status == 204:
                     return None
                 return await resp.json(content_type=None)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            # ValueError: a 200 with a non-JSON body (login page, proxy error page).
             raise InvenTreeError(f"{method} {path}: {err!r}") from err
 
     # Parts

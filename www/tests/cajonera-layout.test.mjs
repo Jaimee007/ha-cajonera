@@ -60,3 +60,9 @@ test("fmtQty", () => {
   assert.equal(fmtQty("40.00000"), "40");
   assert.equal(fmtQty(2.5), "2,5");
 });
+
+test("fmtQty rounds float noise and never uses exponents", () => {
+  assert.equal(fmtQty(0.3 - 0.1), "0,2");
+  assert.equal(fmtQty(1000000.5), "1000000,5");
+  assert.equal(fmtQty(1e21), "1000000000000000000000");
+});

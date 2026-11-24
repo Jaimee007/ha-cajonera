@@ -5,10 +5,11 @@ from __future__ import annotations
 
 def fmt_qty(q: float) -> str:
     """40.0 -> "40", 2.5 -> "2,5" (Spanish decimal comma)."""
-    q = float(q)
-    if q.is_integer():
-        return str(int(q))
-    return f"{q:g}".replace(".", ",")
+    # Fixed precision (3 decimals): no exponents ("1e+06") and no float noise.
+    text = f"{round(float(q), 3):.3f}".rstrip("0").rstrip(".")
+    if text in ("-0", ""):
+        text = "0"
+    return text.replace(".", ",")
 
 
 def join_es(items: list[str]) -> str:

@@ -31,6 +31,8 @@ class FakeServer:
         status, payload, delay = answers[0] if len(answers) == 1 else answers.pop(0)
         if delay:
             await asyncio.sleep(delay)
+        if getattr(self, "add_html", False):
+            return web.Response(text="<html>login</html>", content_type="text/html", status=status)
         return web.json_response(payload, status=status)
 
     def calls(self, method):
@@ -175,3 +177,17 @@ async def test_connection_error_raises_inventree_error():
         client = InvenTreeClient(session, "http://127.0.0.1:1", "abc", timeout=0.5)
         with pytest.raises(InvenTreeError):
             await client.search_parts("m3")
+
+
+async def test_html_body_raises_inventree_error(srv, client):
+    """M2: a proxy/login page answering 200 with HTML must not escape as ValueError."""
+    srv.add("GET", "/api/part/", None)
+    srv.add_html = True
+    with pytest.raises(InvenTreeError):
+        await client.search_parts("m3")
+
+
+async def test_unexpected_shape_raises_inventree_error(srv, client):
+    srv.add("GET", "/api/part/", [{"unexpected": True}])
+    with pytest.raises(InvenTreeError):
+        await client.search_parts("m3")

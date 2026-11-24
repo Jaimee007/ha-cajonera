@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import DOMAIN, SIGNAL_UPDATE, CajoneraHub
+from . import DOMAIN, SIGNAL_UPDATE
+from .logic.service import Cajonera
 
 
 async def async_setup_platform(
@@ -15,14 +16,14 @@ async def async_setup_platform(
 ) -> None:
     if discovery_info is None:
         return
-    hub: CajoneraHub = hass.data[DOMAIN]
+    hub: Cajonera = hass.data[DOMAIN]
     async_add_entities([MapSensor(hub), LowStockSensor(hub)])
 
 
 class _CajoneraSensor(SensorEntity):
     _attr_should_poll = False
 
-    def __init__(self, hub: CajoneraHub):
+    def __init__(self, hub: Cajonera):
         self.hub = hub
 
     async def async_added_to_hass(self) -> None:

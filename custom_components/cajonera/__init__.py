@@ -1,14 +1,14 @@
 """Cajonera: modular drawer cabinet backed by InvenTree.
 
 Home Assistant glue only. All behaviour lives in `logic/` (pure Python, tested
-with pytest); this module wires it to HA services, sensors and timers.
+with pytest): `logic/service.py` implements every service, and this module
+just registers them, forwards notifications and runs the periodic refresh.
 Until the controller firmware exists, a DrawerSimulator plays its part.
 See docs/09_gestion_inventario.md.
 """
 
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
 
 import voluptuous as vol
@@ -23,19 +23,14 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
-from .logic.inventree import InvenTreeClient, InvenTreeError
-from .logic.low_stock import LowStockReport, low_stock_report
-from .logic.models import Drawer, Location
-from .logic.search import DOWN_PHRASE, drawer_contents, search
+from .logic.inventree import InvenTreeClient
+from .logic.models import Drawer
+from .logic.service import Cajonera
 from .logic.simulator import DrawerSimulator
-from .logic.sync import apply_sync, plan_sync
-from .logic.withdraw import Context, withdraw_by_stock, withdraw_by_text
-
-_LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "cajonera"
 SIGNAL_UPDATE = f"{DOMAIN}_update"
-LOW_STOCK_INTERVAL = timedelta(minutes=5)
+REFRESH_INTERVAL = timedelta(minutes=5)
 
 DRAWER_SCHEMA = vol.Schema(
     {
@@ -48,13 +43,22 @@ DRAWER_SCHEMA = vol.Schema(
     }
 )
 
+
+def _unique_addresses(drawers: list[dict]) -> list[dict]:
+    seen = [d["address"] for d in drawers]
+    dupes = sorted({a for a in seen if seen.count(a) > 1})
+    if dupes:
+        raise vol.Invalid(f"simulated_drawers: repeated address {dupes}")
+    return drawers
+
+
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
                 vol.Required("inventree_url"): cv.url,
                 vol.Required("inventree_token"): cv.string,
-                vol.Optional("simulated_drawers", default=[]): [DRAWER_SCHEMA],
+                vol.Optional("simulated_drawers", default=[]): vol.All([DRAWER_SCHEMA], _unique_addresses),
             }
         )
     },
@@ -63,83 +67,7 @@ CONFIG_SCHEMA = vol.Schema(
 
 ORIGIN = vol.In(["alexa", "panel"])
 ADDRESS = vol.All(vol.Coerce(int), vol.Range(min=0, max=31))
-
-
-class CajoneraHub:
-    """State shared by services and sensors. Kept in hass.data[DOMAIN]."""
-
-    def __init__(self, hass: HomeAssistant, api: InvenTreeClient, simulator: DrawerSimulator):
-        self.hass = hass
-        self.api = api
-        self.simulator = simulator
-        self.root_pk: int | None = None
-        self.locations: dict[int, Location] = {}  # location pk -> drawer location
-        self.context: Context | None = None
-        self.low = LowStockReport()
-        simulator.add_listener(self.notify)
-
-    @callback
-    def notify(self) -> None:
-        async_dispatcher_send(self.hass, SIGNAL_UPDATE)
-
-    async def ensure_ready(self) -> bool:
-        """Make sure the root location is known and synced. False if InvenTree is down."""
-        if self.root_pk is not None:
-            return True
-        try:
-            self.root_pk = await self.api.ensure_root()
-        except InvenTreeError as err:
-            _LOGGER.warning("InvenTree not reachable: %s", err)
-            return False
-        await self.sync()
-        return True
-
-    async def refresh_locations(self) -> None:
-        self.locations = {loc.pk: loc for loc in await self.api.child_locations(self.root_pk)}
-
-    async def refresh_low(self) -> None:
-        try:
-            self.low = await low_stock_report(self.api, self.locations)
-        except InvenTreeError as err:
-            _LOGGER.warning("Low-stock refresh failed: %s", err)
-            return
-        self.notify()
-
-    async def sync(self) -> list[str]:
-        """Create and rename InvenTree locations so they match the drawers."""
-        if self.root_pk is None:
-            return [DOWN_PHRASE] if not await self.ensure_ready() else []
-        try:
-            await self.refresh_locations()
-            plan = plan_sync(self.simulator.drawers(), list(self.locations.values()))
-            await apply_sync(self.api, self.root_pk, plan)
-            await self.refresh_locations()
-        except InvenTreeError as err:
-            _LOGGER.warning("Location sync failed: %s", err)
-            return [DOWN_PHRASE]
-        if plan.notices:
-            persistent_notification.async_create(
-                self.hass,
-                "\n".join(f"- {n}" for n in plan.notices),
-                title="Cajonera",
-                notification_id="cajonera_sync",
-            )
-        await self.refresh_low()
-        return plan.notices
-
-    def location_for_address(self, address: int) -> Location | None:
-        return next((loc for loc in self.locations.values() if loc.address == address), None)
-
-    async def tick(self, _now=None) -> None:
-        """Periodic refresh: locations (cheap) and the low-stock report."""
-        if not await self.ensure_ready():
-            return
-        try:
-            await self.refresh_locations()
-        except InvenTreeError as err:
-            _LOGGER.warning("Location refresh failed: %s", err)
-            return
-        await self.refresh_low()
+OPTIONAL_TEXT = vol.Any(None, cv.string)  # an unfilled Alexa slot arrives as None
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -149,98 +77,63 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         Drawer(d["address"], d.get("x"), d.get("y"), d["width"], d["height"], d.get("error"))
         for d in conf["simulated_drawers"]
     ]
-    hub = CajoneraHub(hass, api, DrawerSimulator(drawers))
-    hass.data[DOMAIN] = hub
+
+    @callback
+    def on_change() -> None:
+        async_dispatcher_send(hass, SIGNAL_UPDATE)
+
+    @callback
+    def on_notices(notices: list[str]) -> None:
+        persistent_notification.async_create(
+            hass, "\n".join(f"- {n}" for n in notices), title="Cajonera", notification_id="cajonera_sync"
+        )
+
+    simulator = DrawerSimulator(drawers)
+    cajonera = Cajonera(api, simulator, now=dt_util.now, on_notices=on_notices, on_change=on_change)
+    simulator.add_listener(on_change)
+    hass.data[DOMAIN] = cajonera
+
+    async def tick(_now=None) -> None:
+        await cajonera.tick()
 
     # InvenTree may be down at start-up: never block or fail setup on it.
-    hass.async_create_task(hub.tick())
-    async_track_time_interval(hass, hub.tick, LOW_STOCK_INTERVAL)
+    hass.async_create_background_task(tick(), "cajonera initial sync")
+    async_track_time_interval(hass, tick, REFRESH_INTERVAL)
 
-    _register_services(hass, hub)
+    _register_services(hass, cajonera)
     hass.async_create_task(async_load_platform(hass, "sensor", DOMAIN, {}, config))
     return True
 
 
-def _register_services(hass: HomeAssistant, hub: CajoneraHub) -> None:
+def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def buscar(call: ServiceCall) -> ServiceResponse:
-        if not await hub.ensure_ready():
-            return {"frase": DOWN_PHRASE, "resultados": []}
-        result = await search(hub.api, call.data["texto"], hub.locations)
-        # S1: a searched drawer is "low" when the part searched for is low.
-        low = {h.location.address for h in result.hits if h.part.is_low}
-        if result.addresses:
-            hub.simulator.search(result.addresses, low)
-        placed = {h.location.pk for h in result.hits if h.location.address in result.addresses}
-        if len(result.part_pks) == 1 and len(placed) == 1:
-            hub.context = Context(result.part_pks[0], next(iter(placed)), dt_util.now())
-        return {
-            "frase": result.phrase,
-            "resultados": [
-                {
-                    "stock": h.stock.pk,
-                    "pieza": h.part.name,
-                    "cajon": h.location.name,
-                    "direccion": h.location.address,
-                    "cantidad": h.stock.quantity,
-                    "bajo": h.part.is_low,
-                }
-                for h in result.hits
-            ],
-        }
+        return await cajonera.buscar(call.data.get("texto"))
 
     async def retirar(call: ServiceCall) -> ServiceResponse:
-        if not await hub.ensure_ready():
-            return {"frase": DOWN_PHRASE, "hecho": False}
-        now = dt_util.now()
-        if call.data.get("stock") is not None:
-            result = await withdraw_by_stock(hub.api, call.data["stock"], call.data.get("cantidad"), now, hub.locations)
-        else:
-            result = await withdraw_by_text(
-                hub.api,
-                call.data.get("texto"),
-                call.data.get("cantidad"),
-                call.data.get("cajon"),
-                hub.context,
-                now,
-                hub.locations,
-            )
-        if result.done:
-            hub.context = result.context
-            if result.address is not None:
-                hub.simulator.confirm(result.address, result.low)
-            hass.async_create_task(hub.refresh_low())
-        return {"frase": result.phrase, "hecho": result.done}
+        return await cajonera.retirar(
+            texto=call.data.get("texto"),
+            cantidad=call.data.get("cantidad"),
+            cajon=call.data.get("cajon"),
+            stock=call.data.get("stock"),
+        )
 
     async def contenido(call: ServiceCall) -> ServiceResponse:
-        location = hub.location_for_address(call.data["direccion"])
-        if location is None:
-            return {"cajon": None, "piezas": []}
-        try:
-            hits = await drawer_contents(hub.api, location)
-        except InvenTreeError:
-            return {"cajon": location.name, "piezas": [], "frase": DOWN_PHRASE}
-        return {
-            "cajon": location.name,
-            "piezas": [
-                {"stock": h.stock.pk, "pieza": h.part.name, "cantidad": h.stock.quantity, "bajo": h.part.is_low}
-                for h in hits
-            ],
-        }
+        return await cajonera.contenido(call.data["direccion"])
 
     async def identificar(call: ServiceCall) -> None:
-        hub.simulator.identify(call.data["direccion"])
+        cajonera.simulator.identify(call.data["direccion"])
 
     async def sincronizar(call: ServiceCall) -> ServiceResponse:
-        return {"avisos": await hub.sync()}
+        return await cajonera.sincronizar()
 
     async def simular_apertura(call: ServiceCall) -> None:
-        hub.simulator.set_open(call.data["direccion"], call.data["abierto"])
+        cajonera.simulator.set_open(call.data["direccion"], call.data["abierto"])
 
     hass.services.async_register(
         DOMAIN,
         "inventario_buscar",
         buscar,
-        schema=vol.Schema({vol.Required("texto"): cv.string, vol.Optional("origen", default="panel"): ORIGIN}),
+        schema=vol.Schema({vol.Optional("texto"): OPTIONAL_TEXT, vol.Optional("origen", default="panel"): ORIGIN}),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
@@ -249,14 +142,15 @@ def _register_services(hass: HomeAssistant, hub: CajoneraHub) -> None:
         retirar,
         schema=vol.Schema(
             {
-                vol.Optional("texto"): cv.string,
-                vol.Optional("cantidad"): vol.Coerce(float),
-                vol.Optional("cajon"): cv.string,
-                vol.Optional("stock"): vol.Coerce(int),
+                vol.Optional("texto"): OPTIONAL_TEXT,
+                vol.Optional("cantidad"): vol.Any(None, vol.Coerce(float)),
+                vol.Optional("cajon"): OPTIONAL_TEXT,
+                vol.Optional("stock"): vol.Any(None, vol.Coerce(int)),
                 vol.Optional("origen", default="panel"): ORIGIN,
             }
         ),
-        supports_response=SupportsResponse.ONLY,
+        # A write action: plain scripts may call it without asking for the answer.
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
