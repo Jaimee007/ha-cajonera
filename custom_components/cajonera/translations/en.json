@@ -1,0 +1,49 @@
+{
+  "services": {
+    "inventario_buscar": {
+      "name": "Buscar en el inventario",
+      "description": "Busca una pieza en InvenTree, dice en qué cajón está y lo enciende.",
+      "fields": {
+        "texto": {"name": "Texto", "description": "Lo que buscas, por ejemplo \"tornillos m3\"."},
+        "origen": {"name": "Origen", "description": "panel o alexa."}
+      }
+    },
+    "inventario_retirar": {
+      "name": "Retirar existencias",
+      "description": "Descuenta unidades en InvenTree. Por voz, con texto; desde el panel, con la existencia exacta.",
+      "fields": {
+        "texto": {"name": "Texto", "description": "Pieza, por ejemplo \"tornillos m3\". Vacío: la última buscada (2 min)."},
+        "cantidad": {"name": "Cantidad", "description": "Unidades que has cogido."},
+        "cajon": {"name": "Cajón", "description": "Nombre del cajón (B3) si la pieza está en varios."},
+        "stock": {"name": "Existencia", "description": "Identificador de la existencia en InvenTree (lo usa el panel)."},
+        "origen": {"name": "Origen", "description": "panel o alexa."}
+      }
+    },
+    "contenido_cajon": {
+      "name": "Contenido de un cajón",
+      "description": "Lista lo que hay en un cajón.",
+      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+    },
+    "identificar": {
+      "name": "Identificar cajón",
+      "description": "Hace parpadear un cajón.",
+      "fields": {"direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."}}
+    },
+    "sincronizar_ubicaciones": {
+      "name": "Sincronizar ubicaciones",
+      "description": "Crea y renombra las ubicaciones de InvenTree para que coincidan con los cajones."
+    },
+    "redescubrir": {
+      "name": "Redescubrir cajonera",
+      "description": "Vuelve a mapear la cajonera y sincroniza las ubicaciones."
+    },
+    "simular_apertura": {
+      "name": "Simular apertura",
+      "description": "Solo con cajones simulados: abre o cierra un cajón.",
+      "fields": {
+        "direccion": {"name": "Dirección", "description": "Dirección del cajón (0 = base)."},
+        "abierto": {"name": "Abierto", "description": "true para abrir, false para cerrar."}
+      }
+    }
+  }
+}
