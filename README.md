@@ -33,7 +33,9 @@ cajonera:
 
 ## The card
 
-The integration serves the card itself, so no dashboard resource is needed. Add it to a dashboard:
+The card has screens for search, the part sheet (add, withdraw, update, move and edit a part's
+stock and details), and creating parts and categories. The integration serves the card itself, so
+no dashboard resource is needed. Add it to a dashboard:
 
 ```yaml
 type: custom:cajonera-card
@@ -54,13 +56,24 @@ All services live in the `cajonera` domain; fields and descriptions are in
 
 | Service | Purpose |
 |---|---|
-| `cajonera.inventario_buscar` | Search the inventory |
-| `cajonera.inventario_retirar` | Withdraw stock |
+| `cajonera.inventario_buscar` | Search the inventory and light the drawer of a part |
+| `cajonera.inventario_retirar` | Withdraw stock from a part |
 | `cajonera.contenido_cajon` | List the contents of a drawer |
-| `cajonera.identificar` | Identify a drawer |
-| `cajonera.sincronizar_ubicaciones` | Sync drawer locations with InvenTree |
-| `cajonera.redescubrir` | Rediscover drawers (a sync while the simulator is in use) |
-| `cajonera.simular_apertura` | Simulate opening or closing a drawer |
+| `cajonera.identificar` | Make a drawer blink |
+| `cajonera.sincronizar_ubicaciones` | Create and rename InvenTree locations to match the drawers |
+| `cajonera.redescubrir` | Map the cabinet again and sync its locations |
+| `cajonera.simular_apertura` | Open or close a simulated drawer (simulated drawers only) |
+| `cajonera.sugerir` | Suggest parts while typing, without lighting any drawer |
+| `cajonera.pieza` | Return a part's sheet, light its drawers and remember it as the last part |
+| `cajonera.inventario_anadir` | Add units of a part to a drawer |
+| `cajonera.inventario_actualizar` | Set the counted quantity of a part in a drawer |
+| `cajonera.inventario_mover` | Move a part from one drawer to another |
+| `cajonera.categorias` | Return the InvenTree part categories |
+| `cajonera.categoria_crear` | Create a part category, or return the existing one with that name |
+| `cajonera.sugerir_cajon` | Suggest the drawer for a new part of a category and light it |
+| `cajonera.guardar_aqui` | Light in magenta the drawer a part is going to be stored in |
+| `cajonera.pieza_crear` | Create a part with its initial quantity in a drawer |
+| `cajonera.pieza_editar` | Change only the given details of a part |
 
 ## Development
 
