@@ -65,9 +65,26 @@ class Cajonera:
             await apply_sync(self.api, self.root_pk, plan)
             self.locations = {loc.pk: loc for loc in await self.api.child_locations(self.root_pk)}
             self.synced = True
+            await self._keep_cabinet_stock_when_empty()
         if plan.notices:
             self.on_notices(plan.notices)
         return plan.notices
+
+    async def _keep_cabinet_stock_when_empty(self) -> None:
+        """Stop InvenTree deleting a cabinet item when its last unit is withdrawn.
+
+        Otherwise "no queda ninguno" would be indistinguishable from "never had any".
+        Best effort: a failure is logged and the next sync retries, because the
+        flag is still set on whatever was not reached. Stock outside the cabinet
+        is never touched.
+        """
+        try:
+            for pk in list(self.locations):
+                for item in await self.api.stock_in_location(pk):
+                    if item.delete_on_deplete:
+                        await self.api.set_keep_when_empty(item.pk)
+        except InvenTreeError as err:
+            _LOGGER.warning("Could not mark cabinet stock as keep-when-empty: %s", err)
 
     async def refresh_low(self) -> None:
         try:

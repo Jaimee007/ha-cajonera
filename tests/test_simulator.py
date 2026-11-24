@@ -102,3 +102,43 @@ async def test_unknown_address_is_ignored(sim):
     sim.confirm(99, low=False)
     sim.set_open(99, True)
     assert all(s.mode == "reposo" for s in sim.states())
+
+
+async def test_store_here_lights_magenta_until_opened(sim):
+    sim.store_here(17, seconds=5)
+    assert (state(sim, 17).mode, state(sim, 17).rgb) == ("guardar", (255, 0, 255))
+    assert state(sim, 0).mode == "reposo"
+    sim.set_open(17, True)
+    # Nothing was being searched: white straight away, no green "encontrado".
+    assert (state(sim, 17).mode, state(sim, 17).rgb) == ("abierto", (255, 255, 255))
+    sim.set_open(17, False)
+    assert state(sim, 17).mode == "reposo"
+
+
+async def test_store_here_replaced_by_search(sim):
+    sim.store_here(17, seconds=5)
+    sim.search([21], low=set())
+    assert state(sim, 17).mode == "reposo"
+    assert state(sim, 21).mode == "buscado"
+
+
+async def test_store_here_replaces_previous_store_here_and_keeps_search_timer_clean(sim):
+    sim.store_here(17, seconds=5)
+    sim.store_here(21, seconds=5)
+    assert state(sim, 17).mode == "reposo"
+    assert state(sim, 21).mode == "guardar"
+    sim.search([0], low=set())
+    await asyncio.sleep(0.15)  # the search timer ends the search; the old store timer must not fire later
+    assert all(s.mode == "reposo" for s in sim.states())
+
+
+async def test_store_here_times_out(sim):
+    sim.store_here(17, seconds=0.05)
+    assert state(sim, 17).mode == "guardar"
+    await asyncio.sleep(0.1)
+    assert state(sim, 17).mode == "reposo"
+
+
+async def test_store_here_unknown_address_is_ignored(sim):
+    sim.store_here(99)
+    assert all(s.mode == "reposo" for s in sim.states())

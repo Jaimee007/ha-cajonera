@@ -23,6 +23,7 @@ COLORS = {
     "confirmar_bajo": (255, 120, 0),
     "abierto": (255, 255, 255),
     "identificar": (255, 0, 255),
+    "guardar": (255, 0, 255),  # "store it here": the drawer to put something into
 }
 
 
@@ -39,7 +40,7 @@ class _Slot:
     def __init__(self, drawer: Drawer):
         self.drawer = drawer
         self.open = False
-        self.base = "reposo"  # search layer: reposo / buscado / buscado_bajo
+        self.base = "reposo"  # order layer: reposo / buscado / buscado_bajo / guardar
         self.overlay: str | None = None  # short-lived: encontrado, confirmar_*, identificar
         self.overlay_timer: asyncio.TimerHandle | None = None
 
@@ -68,6 +69,7 @@ class DrawerSimulator:
         self._flash_seconds = flash_seconds
         self._identify_seconds = identify_seconds
         self._search_timer: asyncio.TimerHandle | None = None
+        self._store_timer: asyncio.TimerHandle | None = None
         self._listeners: list[Callable[[], None]] = []
 
     # Reading
@@ -89,8 +91,9 @@ class DrawerSimulator:
     # Orders
 
     def search(self, addresses: list[int], low: set[int]) -> None:
-        """Start a search, replacing any search in progress."""
+        """Start a search, replacing any search (or store-here) in progress."""
         self._cancel_search_timer()
+        self._cancel_store_timer()
         for address, slot in self._slots.items():
             if address in addresses:
                 slot.base = "buscado_bajo" if address in low else "buscado"
@@ -98,6 +101,17 @@ class DrawerSimulator:
                 slot.base = "reposo"
         if any(a in self._slots for a in addresses):
             self._search_timer = asyncio.get_running_loop().call_later(self._search_seconds, self._end_search)
+        self._notify()
+
+    def store_here(self, address: int, seconds: float = 30) -> None:
+        """Light one drawer to say "put it here", replacing any search or earlier store-here."""
+        self._cancel_search_timer()
+        self._cancel_store_timer()
+        known = address in self._slots
+        for a, slot in self._slots.items():
+            slot.base = "guardar" if a == address else "reposo"
+        if known:
+            self._store_timer = asyncio.get_running_loop().call_later(seconds, self._end_store)
         self._notify()
 
     def confirm(self, address: int, low: bool) -> None:
@@ -111,7 +125,10 @@ class DrawerSimulator:
         if slot is None or slot.open == is_open:
             return
         slot.open = is_open
-        if is_open and slot.base != "reposo":
+        if is_open and slot.base == "guardar":
+            # Opened to put something in: no green, nothing was being searched.
+            self._end_store(notify=False)
+        elif is_open and slot.base != "reposo":
             # Found: green for a moment, and the whole search ends.
             self._end_search(notify=False)
             self._overlay(address, "encontrado", self._found_seconds, notify=False)
@@ -147,6 +164,19 @@ class DrawerSimulator:
         if self._search_timer:
             self._search_timer.cancel()
             self._search_timer = None
+
+    def _cancel_store_timer(self) -> None:
+        if self._store_timer:
+            self._store_timer.cancel()
+            self._store_timer = None
+
+    def _end_store(self, notify: bool = True) -> None:
+        self._cancel_store_timer()
+        for slot in self._slots.values():
+            if slot.base == "guardar":
+                slot.base = "reposo"
+        if notify:
+            self._notify()
 
     def _end_search(self, notify: bool = True) -> None:
         self._cancel_search_timer()

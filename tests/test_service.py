@@ -124,3 +124,44 @@ async def test_withdraw_confirms_on_the_drawer():
     assert r["hecho"]
     state = next(s for s in caj.simulator.states() if s.drawer.address == 0)
     assert state.mode == "confirmar_ok"
+
+
+async def test_sync_marks_cabinet_stock_keep_when_empty():
+    # The first sync creates A1 (pk 1001) and B1 (pk 1002); stock 12 sits outside the cabinet.
+    fake = FakeInventory(
+        [Part(5, "Tornillo M3x8", 0, 40), Part(6, "Huevos", 0, 4)],
+        [StockItem(9, 5, "", 30.0, 1001), StockItem(10, 5, "", 10.0, 1002), StockItem(12, 6, "", 4.0, 555)],
+        [],
+    )
+    caj = make(fake)
+    await caj.sync()
+    assert sorted(pk for pk, _ in fake.patched) == [9, 10]
+    assert fake.stock[9].delete_on_deplete is False
+    assert fake.stock[12].delete_on_deplete is True  # outside the cabinet: untouched
+    # Already-marked stock is not patched again by the next sync.
+    fake.patched.clear()
+    await caj.sync()
+    assert fake.patched == []
+
+
+async def test_sync_marking_failure_is_swallowed_and_retried_next_sync():
+    fake = stocked()
+    fake.fail_on = {"set_keep_when_empty"}
+    caj = make(fake)
+    await caj.sync()  # does not raise
+    assert caj.synced
+    assert fake.stock[9].delete_on_deplete is True
+    fake.fail_on = set()
+    await caj.sync()
+    assert fake.stock[9].delete_on_deplete is False
+
+
+async def test_withdraw_last_unit_keeps_item_and_search_says_none_left():
+    # The first sync creates A1 (pk 1001) and B1 (pk 1002).
+    fake = FakeInventory([Part(6, "Huevos", 0, 4)], [StockItem(10, 6, "", 4.0, 1002)], [])
+    caj = make(fake)
+    await caj.sync()
+    r = await caj.retirar(texto="huevos", cantidad=4)
+    assert r["hecho"]
+    assert 10 in fake.stock and fake.stock[10].quantity == 0
+    assert (await caj.buscar("huevos"))["frase"] == "Tenías Huevos en el B1, pero no queda ninguno."
