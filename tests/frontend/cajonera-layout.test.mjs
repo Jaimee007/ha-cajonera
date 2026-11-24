@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { fmtQty, gridCells, rowLabel } from "../cajonera-layout.js";
+import { fmtQty, gridCells, rowLabel } from "../../custom_components/cajonera/frontend/cajonera-layout.js";
 
 const d = (direccion, nombre, x, y, extra = {}) => ({ direccion, nombre, x, y, ancho: 1, alto: 1, ...extra });
 

@@ -9,11 +9,15 @@ See docs/09_gestion_inventario.md.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
+from pathlib import Path
 
 import voluptuous as vol
 
 from homeassistant.components import persistent_notification
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -31,6 +35,8 @@ from .logic.simulator import DrawerSimulator
 DOMAIN = "cajonera"
 SIGNAL_UPDATE = f"{DOMAIN}_update"
 REFRESH_INTERVAL = timedelta(minutes=5)
+FRONTEND_URL = "/cajonera_frontend"
+INTEGRATION_DIR = Path(__file__).parent
 
 DRAWER_SCHEMA = vol.Schema(
     {
@@ -101,8 +107,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_track_time_interval(hass, tick, REFRESH_INTERVAL)
 
     _register_services(hass, cajonera)
+    await _register_card(hass)
     hass.async_create_task(async_load_platform(hass, "sensor", DOMAIN, {}, config))
     return True
+
+
+def _read_version() -> str:
+    return json.loads((INTEGRATION_DIR / "manifest.json").read_text(encoding="utf-8"))["version"]
+
+
+async def _register_card(hass: HomeAssistant) -> None:
+    """Serve the Lovelace card from this integration so no manual resource is needed."""
+    version = await hass.async_add_executor_job(_read_version)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(FRONTEND_URL, str(INTEGRATION_DIR / "frontend"), cache_headers=False)]
+    )
+    # The version in the query string busts the browser cache on every release.
+    add_extra_js_url(hass, f"{FRONTEND_URL}/cajonera-card.js?v={version}")
 
 
 def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
