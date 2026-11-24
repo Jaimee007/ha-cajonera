@@ -45,6 +45,7 @@ class Cajonera:
         self.root_pk: int | None = None
         self.locations: dict[int, Location] = {}
         self.synced = False  # locations match the drawers and are loaded
+        self._stock_marked = False  # every cabinet item is flagged keep-when-empty
         self.context: Context | None = None
         self.low = LowStockReport()
         self._sync_lock = asyncio.Lock()
@@ -65,18 +66,20 @@ class Cajonera:
             await apply_sync(self.api, self.root_pk, plan)
             self.locations = {loc.pk: loc for loc in await self.api.child_locations(self.root_pk)}
             self.synced = True
-            await self._keep_cabinet_stock_when_empty()
         if plan.notices:
             self.on_notices(plan.notices)
         return plan.notices
 
-    async def _keep_cabinet_stock_when_empty(self) -> None:
+    async def mark_stock_keep_when_empty(self) -> None:
         """Stop InvenTree deleting a cabinet item when its last unit is withdrawn.
 
         Otherwise "no queda ninguno" would be indistinguishable from "never had any".
-        Best effort: a failure is logged and the next sync retries, because the
-        flag is still set on whatever was not reached. Stock outside the cabinet
-        is never touched.
+        Runs outside sync() and outside any deadline (from tick() or the manual sync):
+        it is not needed to answer, and a cancellation must not cost sync its notices.
+        `_stock_marked` becomes True only when the whole pass completes; on an
+        InvenTreeError it is logged and the next tick retries. Withdrawals also
+        mark an item before emptying it, so a gap here is never destructive.
+        Stock outside the cabinet is never touched.
         """
         try:
             for pk in list(self.locations):
@@ -85,6 +88,8 @@ class Cajonera:
                         await self.api.set_keep_when_empty(item.pk)
         except InvenTreeError as err:
             _LOGGER.warning("Could not mark cabinet stock as keep-when-empty: %s", err)
+            return
+        self._stock_marked = True
 
     async def refresh_low(self) -> None:
         try:
@@ -104,6 +109,8 @@ class Cajonera:
         except InvenTreeError as err:
             _LOGGER.warning("Cajonera refresh failed: %s", err)
             return
+        if not self._stock_marked:
+            await self.mark_stock_keep_when_empty()
         await self.refresh_low()
 
     async def _ready(self) -> bool:
@@ -211,6 +218,8 @@ class Cajonera:
                 notices = await self.sync()
             except InvenTreeError:
                 return {"avisos": [DOWN_PHRASE]}
+            self._stock_marked = False
+            await self.mark_stock_keep_when_empty()
             await self.refresh_low()
             return {"avisos": notices}
 

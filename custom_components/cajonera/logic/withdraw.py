@@ -67,18 +67,31 @@ async def _remove(
         return WithdrawResult(f"Solo quedan {fmt_qty(in_drawer)} en {_where(location)}.")
 
     # Take from the largest items first, so one removal usually suffices.
+    plan: list[tuple[StockItem, float]] = []
     pending = quantity
+    for item in sorted(items, key=lambda s: s.quantity, reverse=True):
+        if pending <= 0:
+            break
+        take = min(item.quantity, pending)
+        if take > 0:
+            plan.append((item, take))
+            pending -= take
+
+    # An item emptied by this withdrawal must survive it (InvenTree deletes it at 0 unless
+    # told otherwise), or "no queda ninguno" could not be told from "never had any". This is
+    # a write before the removal, so a failure here still means nothing was removed.
+    try:
+        for item, take in plan:
+            if item.delete_on_deplete and take >= item.quantity:
+                await api.set_keep_when_empty(item.pk)
+    except InvenTreeError:
+        return WithdrawResult(DOWN_PHRASE)
+
     removed_any = False
     try:
-        for item in sorted(items, key=lambda s: s.quantity, reverse=True):
-            if pending <= 0:
-                break
-            take = min(item.quantity, pending)
-            if take <= 0:
-                continue
+        for item, take in plan:
             await api.remove_stock(item.pk, take, notes)
             removed_any = True
-            pending -= take
     except InvenTreeError:
         # The POST may have been applied even if the answer never arrived (spec 4.4).
         # Saying "it failed" would invite a double withdrawal.

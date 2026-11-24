@@ -227,3 +227,26 @@ async def test_misheard_drawer_does_not_fall_back_to_context():
     r = await call(fake, drawer="C2", context=Context(5, 11, NOW - timedelta(seconds=10)))
     assert r.phrase == "No hay Tornillo M3x8 en el C2; hay en el B3 y en el C1."
     assert fake.removed == []
+
+
+async def test_withdraw_last_unit_marks_item_first():
+    fake = one_drawer(qty=4)
+    assert fake.stock[9].delete_on_deplete is True
+    r = await call(fake, quantity=4)
+    assert r.done
+    assert 9 in fake.stock and fake.stock[9].quantity == 0
+    assert (9, {"delete_on_deplete": False}) in fake.patched
+
+
+async def test_partial_withdraw_does_not_touch_the_flag():
+    fake = one_drawer(qty=4)
+    await call(fake, quantity=3)
+    assert fake.patched == []
+
+
+async def test_marking_failure_before_last_unit_removes_nothing():
+    fake = one_drawer(qty=4)
+    fake.fail_on = {"set_keep_when_empty"}
+    r = await call(fake, quantity=4)
+    assert r.phrase == "No puedo consultar el inventario ahora mismo."
+    assert not r.done and fake.removed == []
