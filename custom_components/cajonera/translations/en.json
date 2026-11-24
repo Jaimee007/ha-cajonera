@@ -188,6 +188,16 @@
         }
       }
     },
+    "guardar_aqui": {
+      "name": "Store here",
+      "description": "Lights in magenta the drawer a part is going to be stored in.",
+      "fields": {
+        "direccion": {
+          "name": "Address",
+          "description": "Drawer address (0 = base)."
+        }
+      }
+    },
     "pieza_crear": {
       "name": "Create part",
       "description": "Creates a part with its initial quantity in a drawer.",

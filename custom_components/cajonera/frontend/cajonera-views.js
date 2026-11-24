@@ -25,7 +25,6 @@ export const byName = (a, b) => {
   const [x, y] = [nameKey(a), nameKey(b)];
   return x[0] - y[0] || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0) || x[2] - y[2];
 };
-export const sameText = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
 
 // One column everywhere: on a phone (viewport under 600 px) or in a very narrow card.
 const NARROW = `

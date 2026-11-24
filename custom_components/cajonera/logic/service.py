@@ -363,3 +363,9 @@ class Cajonera:
         if answer["direccion"] is not None:
             self.simulator.store_here(answer["direccion"])
         return answer
+
+    def guardar_aqui(self, direccion: int) -> None:
+        """Move the "store it here" light to the drawer the user chose instead of the suggested one."""
+        # An unknown address is ignored: lighting nothing must not end a search in progress.
+        if any(d.address == direccion for d in self.simulator.drawers()):
+            self.simulator.store_here(direccion)

@@ -10,7 +10,7 @@
 //   type: custom:cajonera-card
 
 import { createSequencer, debounceMs, defaultDrawer, fmtQty, minChars, parseQty, suggestionRows } from "./cajonera-layout.js";
-import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, sameText, viewMethods } from "./cajonera-views.js";
+import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods } from "./cajonera-views.js";
 
 const BAD_QTY = "Dime una cantidad válida.";
 
@@ -237,7 +237,7 @@ class CajoneraCard extends HTMLElement {
     const res = await this._call("sugerir", { texto: nombre }, "open");
     if (!res) return;
     const list = res.sugerencias ?? [];
-    const hit = list.find((s) => s.nombre === nombre) ?? list.find((s) => sameText(s.nombre, nombre));
+    const hit = list.find((s) => s.nombre === nombre); // exact name only: never open a look-alike
     if (hit) await this._openPart(hit.pieza_pk);
     else this._toast(`No encuentro la ficha de «${nombre}».`);
   }
@@ -282,6 +282,8 @@ class CajoneraCard extends HTMLElement {
       this._catSeq.next(); // a pending suggestion must not override the user's tap
       this._target = { direccion: address, origen: "elegido" };
       this._hint = null;
+      // The cabinet must light the drawer the card targets, not the one it suggested.
+      this._callNoResponse("guardar_aqui", { direccion: address });
       this._render();
     } else {
       this._openDrawer(address);
@@ -432,6 +434,7 @@ class CajoneraCard extends HTMLElement {
 
   _startCreate(nombre) {
     this._closeSuggestions();
+    this._catSeq.next(); // a late answer from an earlier create form must not land on this one
     this._screen = "crear";
     Object.assign(this._form, {
       c_nombre: nombre ?? "",
@@ -467,6 +470,8 @@ class CajoneraCard extends HTMLElement {
     if (!this._catSeq.accept(n) || this._screen !== "crear") return;
     this._hint = res?.motivo ?? null;
     if (res?.direccion != null) this._target = { direccion: res.direccion, origen: "sugerido" };
+    // No suggestion for this category: an earlier suggestion no longer applies; a tapped drawer stays.
+    else if (this._target?.origen === "sugerido") this._target = null;
     this._render();
   }
 

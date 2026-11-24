@@ -307,6 +307,18 @@ async def test_sugerir_cajon_lights_store_here():
     assert _modes(caj) == {0: "guardar", 17: "reposo"}
 
 
+async def test_guardar_aqui_moves_the_magenta_light():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, 1001)], [])
+    fake.parts[5] = Part(5, "Tornillo M3x8", 0, 40, category_pk=3)
+    caj = make(fake)
+    assert (await caj.sugerir_cajon(3))["direccion"] == 0
+    assert _modes(caj) == {0: "guardar", 17: "reposo"}
+    caj.guardar_aqui(17)
+    assert _modes(caj) == {0: "reposo", 17: "guardar"}
+    caj.guardar_aqui(30)  # unknown address: ignored
+    assert _modes(caj) == {0: "reposo", 17: "guardar"}
+
+
 async def test_sugerir_cajon_down_lights_nothing():
     fake = stocked()
     fake.fail = True

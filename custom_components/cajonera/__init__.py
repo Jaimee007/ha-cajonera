@@ -182,6 +182,9 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def sugerir_cajon(call: ServiceCall) -> ServiceResponse:
         return await cajonera.sugerir_cajon(call.data["categoria"])
 
+    async def guardar_aqui(call: ServiceCall) -> None:
+        cajonera.guardar_aqui(call.data["direccion"])
+
     async def pieza_crear(call: ServiceCall) -> ServiceResponse:
         return await cajonera.pieza_crear(
             call.data.get("nombre"),
@@ -303,6 +306,8 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         # It lights a drawer, but the card calls it for the answer.
         supports_response=SupportsResponse.ONLY,
     )
+    # The card calls it when the user taps another drawer than the suggested one.
+    hass.services.async_register(DOMAIN, "guardar_aqui", guardar_aqui, schema=vol.Schema({vol.Required("direccion"): ID}))
     hass.services.async_register(
         DOMAIN,
         "pieza_crear",

@@ -188,6 +188,16 @@
         }
       }
     },
+    "guardar_aqui": {
+      "name": "Guardar aquí",
+      "description": "Enciende en magenta el cajón donde se va a guardar una pieza.",
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
+    },
     "pieza_crear": {
       "name": "Crear pieza",
       "description": "Crea una pieza con su cantidad inicial en un cajón.",

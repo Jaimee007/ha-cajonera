@@ -222,6 +222,17 @@ sugerir_cajon:
           max: 100000000
           mode: box
 
+guardar_aqui:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+
 pieza_crear:
   fields:
     nombre:
