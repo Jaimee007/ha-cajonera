@@ -160,3 +160,37 @@ test("debounce and minimum-length constants", () => {
   assert.equal(debounceMs, 300);
   assert.equal(minChars, 2);
 });
+
+test("parseQty rejects ambiguous thousands", () => {
+  assert.equal(parseQty("1.000"), null);
+  assert.equal(parseQty("1,000"), null);
+  assert.equal(parseQty("12.500"), null);
+  assert.equal(parseQty("1.000", { allowZero: true }), null);
+});
+
+test("parseQty accepts leading and trailing separators", () => {
+  assert.equal(parseQty(",5"), 0.5);
+  assert.equal(parseQty(".5"), 0.5);
+  assert.equal(parseQty("2,"), 2);
+  assert.equal(parseQty("2."), 2);
+});
+
+test("parseQty accepts three decimals below one", () => {
+  assert.equal(parseQty("0,125"), 0.125);
+  assert.equal(parseQty("0.125"), 0.125);
+});
+
+test("parseQty handles null and undefined", () => {
+  assert.equal(parseQty(null), null);
+  assert.equal(parseQty(undefined), null);
+  assert.equal(parseQty(null, { allowZero: true }), null);
+});
+
+test("parseQty rejects malformed input", () => {
+  assert.equal(parseQty("1e3"), null);
+  assert.equal(parseQty("+2"), null);
+  assert.equal(parseQty("1.5.2"), null);
+  assert.equal(parseQty("2 5"), null);
+  assert.equal(parseQty("."), null);
+  assert.equal(parseQty(","), null);
+});

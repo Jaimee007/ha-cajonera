@@ -54,13 +54,20 @@ export function gridCells(cajones) {
 export const debounceMs = 300;
 export const minChars = 2;
 
-const QTY_PATTERN = /^\d+(?:[.,]\d+)?$/;
+// Digits with at most one separator, at least one digit overall.
+const QTY_PATTERN = /^(\d*)(?:[.,](\d*))?$/;
 
 export function parseQty(text, { allowZero = false } = {}) {
-  // Accepts "2,5" and "2.5"; anything else (empty, letters, sign) is rejected.
-  const t = String(text ?? "").trim();
-  if (!QTY_PATTERN.test(t)) return null;
-  const n = Number(t.replace(",", "."));
+  // Accepts "2,5", "2.5", ",5", "2," and "2."; rejects empty, letters, signs.
+  if (text === null || text === undefined) return null;
+  const t = String(text).trim();
+  const m = QTY_PATTERN.exec(t);
+  if (!m) return null;
+  const [, intPart = "", fracPart = ""] = m;
+  if (intPart === "" && fracPart === "") return null;
+  // "1.000" or "1,000" is ambiguous (thousands separator or decimal): refuse it.
+  if (intPart !== "" && /^[1-9]/.test(intPart) && fracPart.length === 3) return null;
+  const n = Number(`${intPart || "0"}.${fracPart || "0"}`);
   if (!Number.isFinite(n)) return null;
   if (n === 0) return allowZero ? 0 : null;
   return n;
