@@ -40,3 +40,19 @@ async def test_create_part_and_category_are_recorded():
     part = await inv.create_part("M5", cat.pk, 11, 3, ipn="X")
     assert inv.created_categories == [cat] and inv.created_parts == [part]
     assert [s.part_pk for s in await inv.stock_in_category(cat.pk, 1)] == [part.pk]
+
+
+async def test_create_part_initial_stock_uses_inventree_default_and_returns_zero_total():
+    inv = _inv()
+    part = await inv.create_part("M5", 8, 11, 3)
+    assert part.total_stock == 0  # the real POST response is not annotated
+    assert inv.parts[part.pk].total_stock == 3  # but a later get_part sees the real total
+    (item,) = [s for s in inv.stock.values() if s.part_pk == part.pk]
+    assert item.quantity == 3 and item.delete_on_deplete is True
+
+
+async def test_create_part_with_zero_quantity_adds_no_stock():
+    inv = _inv()
+    part = await inv.create_part("M5", 8, 11, 0)
+    assert [s for s in inv.stock.values() if s.part_pk == part.pk] == []
+    assert inv.parts[part.pk].total_stock == 0

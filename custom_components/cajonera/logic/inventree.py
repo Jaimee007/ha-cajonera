@@ -135,6 +135,8 @@ class InvenTreeClient:
         keywords: str = "",
         minimum: float = 0,
     ) -> Part:
+        """Create a part with its initial stock. The returned total_stock is not annotated by
+        InvenTree (reads 0): do not trust it, re-read with get_part."""
         data = await self._request(
             "POST",
             "/api/part/",

@@ -156,12 +156,17 @@ class FakeInventory:
     ) -> Part:
         await self._io("create_part")
         self._next_pk += 1
-        part = Part(self._next_pk, name, minimum, quantity, ipn, category_pk, description, keywords)
+        part = Part(self._next_pk, name, minimum, max(quantity, 0), ipn, category_pk, description, keywords)
         self.parts[part.pk] = part
-        self._next_pk += 1
-        self.stock[self._next_pk] = StockItem(self._next_pk, part.pk, name, quantity, location_pk, False)
-        self.created_parts.append(part)
-        return part
+        if quantity > 0:
+            # InvenTree's initial_stock uses the model default (delete_on_deplete=True),
+            # so callers must run set_keep_when_empty themselves. Quantity 0 adds no stock.
+            self._next_pk += 1
+            self.stock[self._next_pk] = StockItem(self._next_pk, part.pk, name, quantity, location_pk)
+        # The real POST /api/part/ response is not annotated: it reports total 0.
+        returned = replace(part, total_stock=0.0)
+        self.created_parts.append(returned)
+        return returned
 
     async def update_part(self, pk: int, **fields) -> None:
         await self._io("update_part")
