@@ -196,6 +196,10 @@ class FakeInventory:
         await self._io("child_locations")
         return list(self.locations.values())
 
+    async def get_location(self, pk: int) -> Location:
+        await self._io("get_location")
+        return self.locations[pk]
+
     async def create_location(self, parent_pk: int, name: str, address: int) -> Location:
         await self._io("create_location")
         self._next_pk += 1

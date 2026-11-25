@@ -140,3 +140,31 @@ async def test_search_groups_items_of_one_part_per_drawer():
     r = await search(inv([part], stock), "m3", LOCS)
     assert [(h.location.name, h.stock.pk, h.stock.quantity) for h in r.hits] == [("B3", 6, 12.0), ("C1", 7, 5.0)]
     assert r.phrase == "Hay en el B3 y en el C1, 17 en total."
+
+
+async def test_search_parts_result_matches_search():
+    from logic.search import search_parts_result
+
+    fake = inv([M3x8], [StockItem(9, 5, "Tornillo M3x8", 40.0, 11)])
+    direct = await search(fake, "m3", LOCS)
+    via = await search_parts_result(fake, await fake.search_parts("m3"), LOCS)
+    assert via == direct
+
+
+async def test_outside_cabinet_uses_real_location():
+    from logic.search import search_parts_result
+
+    part = Part(5, "Huevos", 0, 12)
+    fake = inv([part], [StockItem(9, 5, "Huevos", 12.0, 77)])
+    r = await search_parts_result(fake, [part], LOCS, outside={77: "Nevera"})
+    assert r.phrase == "Está en Nevera. Quedan 12."
+    assert r.addresses == []
+
+
+async def test_outside_ignored_when_cabinet_has_stock():
+    from logic.search import search_parts_result
+
+    part = Part(5, "Huevos", 0, 14)
+    fake = inv([part], [StockItem(9, 5, "Huevos", 12.0, 77), StockItem(10, 5, "Huevos", 2.0, 11)])
+    r = await search_parts_result(fake, [part], LOCS, outside={77: "Nevera"})
+    assert r.phrase.startswith("Están en el B3.")

@@ -360,3 +360,8 @@ async def test_new_write_endpoints_raise_inventree_error_on_http_error(srv, clie
     srv.add("POST", "/api/stock/add/", {}, status=400)
     with pytest.raises(InvenTreeError):
         await client.add_stock(9, 1, "x")
+
+
+async def test_get_location_maps_name(srv, client):
+    srv.add("GET", "/api/stock/location/7/", {"pk": 7, "name": "Nevera", "parent": None})
+    assert await client.get_location(7) == Location(7, "Nevera", None)
