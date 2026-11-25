@@ -13,6 +13,17 @@ import { createSequencer, debounceMs, defaultDrawer, fmtQty, minChars, parseQty,
 import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods } from "./cajonera-views.js";
 
 const BAD_QTY = "Dime una cantidad válida.";
+// Services that change InvenTree: when the call itself fails we cannot tell whether it was applied.
+const WRITES = new Set([
+  "inventario_retirar",
+  "inventario_anadir",
+  "inventario_actualizar",
+  "inventario_mover",
+  "pieza_crear",
+  "pieza_editar",
+  "categoria_crear",
+]);
+const MAYBE_WRITTEN = "No sé si se ha registrado. Revisa antes de repetirlo.";
 
 class CajoneraCard extends HTMLElement {
   constructor() {
@@ -92,7 +103,7 @@ class CajoneraCard extends HTMLElement {
       });
       return res?.response ?? {};
     } catch (err) {
-      this._toast(`Error: ${err?.message ?? err}`);
+      this._toast(WRITES.has(service) ? MAYBE_WRITTEN : `Error: ${err?.message ?? err}`);
       return null;
     } finally {
       if (key) {
@@ -231,17 +242,6 @@ class CajoneraCard extends HTMLElement {
     this._showSheet(res);
   }
 
-  // Result rows, drawer contents and low stock carry names, not pks: resolve through `sugerir`.
-  async _openByName(nombre) {
-    if (this._pending.has("open")) return;
-    const res = await this._call("sugerir", { texto: nombre }, "open");
-    if (!res) return;
-    const list = res.sugerencias ?? [];
-    const hit = list.find((s) => s.nombre === nombre); // exact name only: never open a look-alike
-    if (hit) await this._openPart(hit.pieza_pk);
-    else this._toast(`No encuentro la ficha de «${nombre}».`);
-  }
-
   async _openDrawer(address, identify = true) {
     this._selected = address;
     if (identify) this._callNoResponse("identificar", { direccion: address });
@@ -292,7 +292,16 @@ class CajoneraCard extends HTMLElement {
 
   // Part sheet
 
+  // The create screen owns the magenta "store here" light: put it out when leaving.
+  _leaveCreate() {
+    if (this._screen !== "crear") return;
+    this._catSeq.next(); // a late suggestion must not light a drawer on another screen
+    if (this._target) this._callNoResponse("guardar_apagar");
+    this._target = null;
+  }
+
   _showSheet(sheet) {
+    this._leaveCreate();
     this._closeSuggestions();
     this._sheet = sheet;
     this._screen = "ficha";
@@ -368,10 +377,10 @@ class CajoneraCard extends HTMLElement {
     if (accion === "retirar") {
       const row = s.cajones.find((r) => r.direccion === direccion);
       if (!row) return this._toast(`No hay ${s.nombre} en ese cajón.`);
-      // Exact name plus explicit drawer: never depends on the voice context.
+      // The part id plus an explicit drawer: no name lookup, no voice context.
       res = await this._call(
         "inventario_retirar",
-        { texto: s.nombre, cantidad: qty, cajon: row.cajon, origen: "panel" },
+        { pieza_pk: s.pieza_pk, cantidad: qty, cajon: row.cajon, origen: "panel" },
         "confirmar",
       );
     } else {
@@ -469,9 +478,16 @@ class CajoneraCard extends HTMLElement {
     const res = await this._call("sugerir_cajon", { categoria });
     if (!this._catSeq.accept(n) || this._screen !== "crear") return;
     this._hint = res?.motivo ?? null;
-    if (res?.direccion != null) this._target = { direccion: res.direccion, origen: "sugerido" };
-    // No suggestion for this category: an earlier suggestion no longer applies; a tapped drawer stays.
-    else if (this._target?.origen === "sugerido") this._target = null;
+    if (res?.direccion != null) {
+      this._target = { direccion: res.direccion, origen: "sugerido" };
+      // The server only answers: the card lights the drawer once it accepts the answer.
+      this._callNoResponse("guardar_aqui", { direccion: res.direccion });
+    } else if (this._target?.origen !== "elegido") {
+      // No suggestion for this category: an earlier suggestion no longer applies and its light goes out.
+      // A tapped drawer stays targeted, and lit.
+      this._target = null;
+      this._callNoResponse("guardar_apagar");
+    }
     this._render();
   }
 
@@ -600,6 +616,7 @@ class CajoneraCard extends HTMLElement {
     if (ds.addr !== undefined) return this._onCell(Number(ds.addr));
     switch (ds.act) {
       case "volver":
+        this._leaveCreate();
         this._screen = this._screen === "editar" ? "ficha" : "buscar";
         return this._render();
       case "editar":
@@ -613,7 +630,7 @@ class CajoneraCard extends HTMLElement {
       case "retirar_stock":
         return this._withdrawStock(Number(ds.stock));
       case "pieza":
-        return this._openByName(ds.nombre);
+        return Number.isFinite(Number(ds.pk)) ? this._openPart(Number(ds.pk)) : undefined;
       case "mantenimiento":
         return this._runMaintenance(ds.service);
       default:

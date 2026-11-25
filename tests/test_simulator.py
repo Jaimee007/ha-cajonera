@@ -142,3 +142,21 @@ async def test_store_here_times_out(sim):
 async def test_store_here_unknown_address_is_ignored(sim):
     sim.store_here(99)
     assert all(s.mode == "reposo" for s in sim.states())
+
+
+async def test_clear_store_clears_only_the_store_light(sim):
+    sim.clear_store()  # nothing lit: no-op
+    sim.store_here(17)
+    sim.clear_store()
+    assert all(s.mode == "reposo" for s in sim.states())
+    assert sim._store_timer is None
+    sim.search([21], low=set())
+    sim.clear_store()
+    assert state(sim, 21).mode == "buscado"
+
+
+async def test_search_with_no_drawers_clears_lights_and_arms_no_timer(sim):
+    sim.store_here(17)
+    sim.search([], low=set())
+    assert all(s.mode == "reposo" for s in sim.states())
+    assert sim._search_timer is None and sim._store_timer is None

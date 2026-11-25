@@ -114,6 +114,11 @@ class DrawerSimulator:
             self._store_timer = asyncio.get_running_loop().call_later(seconds, self._end_store)
         self._notify()
 
+    def clear_store(self) -> None:
+        """Put out the "store it here" light. A search in progress is not touched."""
+        if any(slot.base == "guardar" for slot in self._slots.values()):
+            self._end_store()
+
     def confirm(self, address: int, low: bool) -> None:
         self._overlay(address, "confirmar_bajo" if low else "confirmar_ok", self._flash_seconds)
 

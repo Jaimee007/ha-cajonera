@@ -65,8 +65,8 @@ export function parseQty(text, { allowZero = false } = {}) {
   if (!m) return null;
   const [, intPart = "", fracPart = ""] = m;
   if (intPart === "" && fracPart === "") return null;
-  // "1.000" or "1,000" is ambiguous (thousands separator or decimal): refuse it.
-  if (intPart !== "" && /^[1-9]/.test(intPart) && fracPart.length === 3) return null;
+  // "1.000" or "1,000" is ambiguous (thousands separator or decimal): refuse it, leading zeros included.
+  if (intPart !== "" && /^0*[1-9]/.test(intPart) && fracPart.length === 3) return null;
   const n = Number(`${intPart || "0"}.${fracPart || "0"}`);
   if (!Number.isFinite(n)) return null;
   if (n === 0) return allowZero ? 0 : null;

@@ -112,7 +112,7 @@ raise on InvenTree failures (they answer "No puedo consultar el inventario ahora
 | `cajonera.inventario_mover` | `pieza_pk`, `desde` (address), `hasta` (address), `cantidad` (optional: everything in `desde`) | `{frase, hecho}` | Transfers between drawers |
 | `cajonera.categorias` | — | `{categorias: [{pk, nombre, ruta}]}` | — |
 | `cajonera.categoria_crear` | `nombre`, `padre` (optional) | `{categoria: {pk, nombre, ruta}}` | Creates the category |
-| `cajonera.sugerir_cajon` | `categoria` | `{direccion, cajon, motivo}` or nulls | Lights the suggested drawer in **"guardar" mode** (magenta, slow breathing, `09` S6) until it is opened, another suggestion replaces it, or 30 s pass |
+| `cajonera.sugerir_cajon` | `categoria` | `{direccion, cajon, motivo}` or nulls | Only answers. The card lights the drawer in **"guardar" mode** (magenta, slow breathing, `09` S6) with `guardar_aqui` when it accepts the answer, and puts it out with `guardar_apagar` (no fields) when a null answer is accepted or the create screen is left; the light also ends when the drawer is opened, another light replaces it, or 30 s pass |
 | `cajonera.pieza_crear` | `nombre`, `categoria`, `direccion`, `cantidad`, optional `ipn`, `descripcion`, `palabras_clave`, `minimo` | `{frase, hecho, pieza_pk}` | Creates the part with its initial stock in that drawer, in one InvenTree call when possible |
 | `cajonera.pieza_editar` | `pieza_pk` + any of `nombre`, `descripcion`, `categoria`, `palabras_clave`, `ipn`, `minimo` | `{frase, hecho}` | Patches the part |
 

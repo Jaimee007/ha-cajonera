@@ -82,6 +82,7 @@ class LowStockSensor(_CajoneraSensor):
         return {
             "piezas": [
                 {
+                    "pieza_pk": lp.part.pk,
                     "pieza": lp.part.name,
                     "total": lp.part.total_stock,
                     "minimo": lp.part.minimum_stock,

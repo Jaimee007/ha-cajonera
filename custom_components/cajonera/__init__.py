@@ -147,6 +147,7 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
             cantidad=call.data.get("cantidad"),
             cajon=call.data.get("cajon"),
             stock=call.data.get("stock"),
+            pieza_pk=call.data.get("pieza_pk"),
         )
 
     async def contenido(call: ServiceCall) -> ServiceResponse:
@@ -185,6 +186,9 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def guardar_aqui(call: ServiceCall) -> None:
         cajonera.guardar_aqui(call.data["direccion"])
 
+    async def guardar_apagar(call: ServiceCall) -> None:
+        cajonera.guardar_apagar()
+
     async def pieza_crear(call: ServiceCall) -> ServiceResponse:
         return await cajonera.pieza_crear(
             call.data.get("nombre"),
@@ -222,6 +226,7 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
                 vol.Optional("cantidad"): vol.Any(None, vol.Coerce(float)),
                 vol.Optional("cajon"): OPTIONAL_TEXT,
                 vol.Optional("stock"): vol.Any(None, vol.Coerce(int)),
+                vol.Optional("pieza_pk"): vol.Any(None, ID),
                 vol.Optional("origen", default="panel"): ORIGIN,
             }
         ),
@@ -303,11 +308,12 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         "sugerir_cajon",
         sugerir_cajon,
         schema=vol.Schema({vol.Required("categoria"): ID}),
-        # It lights a drawer, but the card calls it for the answer.
+        # It only answers; the card lights the drawer with guardar_aqui once it accepts the answer.
         supports_response=SupportsResponse.ONLY,
     )
-    # The card calls it when the user taps another drawer than the suggested one.
+    # The card owns the "store here" light: it lights the drawer it targets and puts it out again.
     hass.services.async_register(DOMAIN, "guardar_aqui", guardar_aqui, schema=vol.Schema({vol.Required("direccion"): ID}))
+    hass.services.async_register(DOMAIN, "guardar_apagar", guardar_apagar)
     hass.services.async_register(
         DOMAIN,
         "pieza_crear",

@@ -57,7 +57,7 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | Service | Purpose |
 |---|---|
 | `cajonera.inventario_buscar` | Search the inventory and light the drawer of a part |
-| `cajonera.inventario_retirar` | Withdraw stock from a part |
+| `cajonera.inventario_retirar` | Withdraw stock from a part, by text (voice), stock item or part id (`pieza_pk`) |
 | `cajonera.contenido_cajon` | List the contents of a drawer |
 | `cajonera.identificar` | Make a drawer blink |
 | `cajonera.sincronizar_ubicaciones` | Create and rename InvenTree locations to match the drawers |
@@ -70,8 +70,9 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | `cajonera.inventario_mover` | Move a part from one drawer to another |
 | `cajonera.categorias` | Return the InvenTree part categories |
 | `cajonera.categoria_crear` | Create a part category, or return the existing one with that name |
-| `cajonera.sugerir_cajon` | Suggest the drawer for a new part of a category and light it |
+| `cajonera.sugerir_cajon` | Suggest the drawer for a new part of a category (it lights nothing) |
 | `cajonera.guardar_aqui` | Light in magenta the drawer a part is going to be stored in |
+| `cajonera.guardar_apagar` | Put out the magenta store-here light (a search in progress is left alone) |
 | `cajonera.pieza_crear` | Create a part with its initial quantity in a drawer |
 | `cajonera.pieza_editar` | Change only the given details of a part |
 

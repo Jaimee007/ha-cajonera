@@ -187,6 +187,38 @@ async def withdraw_by_text(
         return WithdrawResult(DOWN_PHRASE)
 
 
+async def withdraw_by_part(
+    api,
+    part_pk: int,
+    quantity: float | None,
+    drawer: str | None,
+    now: datetime,
+    locations: dict[int, Location],
+) -> WithdrawResult:
+    """Panel withdrawal of a known part: no name resolution, same drawer rules as the voice route."""
+    if _bad_quantity(quantity):
+        return WithdrawResult(ASK_QTY)
+    drawer = (drawer or "").strip()
+    try:
+        part = await api.get_part(part_pk)
+        drawers = _by_drawer(await api.stock_for_part(part.pk), locations)
+        if not drawers:
+            return WithdrawResult(f"Hay {fmt_qty(part.total_stock)} de {part.name}, pero no está en ningún cajón.")
+        where_all = join_es([f"en {_where(locations[pk])}" for pk in list(drawers)[:3]])
+        if drawer:
+            # An explicit drawer is either honoured or refused, never ignored.
+            chosen = next((pk for pk in drawers if locations[pk].name.upper() == drawer.upper()), None)
+            if chosen is None:
+                return WithdrawResult(f"No hay {part.name} en el {drawer.upper()}; hay {where_all}.")
+        elif len(drawers) == 1:
+            chosen = next(iter(drawers))
+        else:
+            return WithdrawResult(f"Hay {where_all}, ¿de cuál?")
+        return await _remove(api, part, locations[chosen], drawers[chosen], quantity, now, locations, "cajonera: panel")
+    except InvenTreeError:
+        return WithdrawResult(DOWN_PHRASE)
+
+
 async def withdraw_by_stock(
     api, stock_pk: int, quantity: float, now: datetime, locations: dict[int, Location]
 ) -> WithdrawResult:

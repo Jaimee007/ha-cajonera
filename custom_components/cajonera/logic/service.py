@@ -30,11 +30,13 @@ from .search import DOWN_PHRASE, drawer_contents, search
 from .simulator import DrawerSimulator
 from .stock_ops import INVALID_QTY, MAYBE_STOCK, OpResult, add_to_drawer, count_drawer, move_between
 from .sync import apply_sync, plan_sync
-from .withdraw import ASK_QTY, MAYBE_DONE, Context, withdraw_by_stock, withdraw_by_text
+from .withdraw import ASK_QTY, MAYBE_DONE, Context, withdraw_by_part, withdraw_by_stock, withdraw_by_text
 
 _LOGGER = logging.getLogger(__name__)
 
 DEADLINE = 3.5  # seconds; below the Lambda's 4 s budget
+# An idempotent write (a PATCH, a find-or-create) can be repeated safely, so it says nothing about quantities.
+MAYBE_SAVED = "No sé si se ha guardado. Revisa antes de repetirlo."
 
 
 class Cajonera:
@@ -161,6 +163,7 @@ class Cajonera:
             "resultados": [
                 {
                     "stock": h.stock.pk,
+                    "pieza_pk": h.part.pk,
                     "pieza": h.part.name,
                     "cajon": h.location.name,
                     "direccion": h.location.address,
@@ -177,21 +180,24 @@ class Cajonera:
         cantidad: float | None = None,
         cajon: str | None = None,
         stock: int | None = None,
+        pieza_pk: int | None = None,
     ) -> dict:
         if cantidad is None or cantidad <= 0:
             return {"frase": ASK_QTY, "hecho": False}
         return await self._bounded(
-            self._retirar(texto, cantidad, cajon, stock),
+            self._retirar(texto, cantidad, cajon, stock, pieza_pk),
             # Past the deadline a removal may already be in flight: never say "failed".
             {"frase": MAYBE_DONE, "hecho": False},
         )
 
-    async def _retirar(self, texto, cantidad, cajon, stock) -> dict:
+    async def _retirar(self, texto, cantidad, cajon, stock, pieza_pk=None) -> dict:
         if not await self._ready():
             return {"frase": DOWN_PHRASE, "hecho": False}
         now = self.now()
         if stock is not None:
             result = await withdraw_by_stock(self.api, stock, cantidad, now, self.locations)
+        elif pieza_pk is not None:
+            result = await withdraw_by_part(self.api, pieza_pk, cantidad, cajon, now, self.locations)
         else:
             result = await withdraw_by_text(self.api, texto, cantidad, cajon, self.context, now, self.locations)
         if result.context is not None:
@@ -218,7 +224,7 @@ class Cajonera:
         return {
             "cajon": location.name,
             "piezas": [
-                {"stock": h.stock.pk, "pieza": h.part.name, "cantidad": h.stock.quantity, "bajo": h.part.is_low}
+                {"stock": h.stock.pk, "pieza_pk": h.part.pk, "pieza": h.part.name, "cantidad": h.stock.quantity, "bajo": h.part.is_low}
                 for h in hits
             ],
         }
@@ -262,8 +268,8 @@ class Cajonera:
         if len(addresses) == 1:
             location_pk = next((pk for pk, loc in self.locations.items() if loc.address == addresses[0]), None)
         self.context = Context(pieza_pk, location_pk, self.now())
-        if addresses:
-            self.simulator.search(addresses, set(addresses) if sheet["bajo"] else set())
+        # A part in no drawer must not leave the previous part's lights on.
+        self.simulator.search(addresses, set(addresses) if sheet["bajo"] else set())
         return sheet
 
     async def anadir(self, pieza_pk: int, direccion: int, cantidad: float | None) -> dict:
@@ -313,11 +319,11 @@ class Cajonera:
     async def pieza_editar(self, pieza_pk: int, **changes) -> dict:
         # None means "not provided" (an unfilled slot); an empty string clears a field.
         changes = {key: value for key, value in changes.items() if value is not None}
-        return await self._write(lambda: edit_part(self.api, pieza_pk, changes))
+        return await self._write(lambda: edit_part(self.api, pieza_pk, changes), maybe=MAYBE_SAVED)
 
-    async def _write(self, op, with_part_pk: bool = False) -> dict:
+    async def _write(self, op, with_part_pk: bool = False, maybe: str = MAYBE_STOCK) -> dict:
         """Run a stock or catalog write under the deadline and apply its side effects."""
-        timeout = {"frase": MAYBE_STOCK, "hecho": False}
+        timeout = {"frase": maybe, "hecho": False}
         if with_part_pk:
             timeout["pieza_pk"] = None
         return await self._bounded(self._write_inner(op, with_part_pk), timeout)
@@ -347,7 +353,7 @@ class Cajonera:
         return {"categorias": await list_categories(self.api)}
 
     async def categoria_crear(self, nombre: str | None, padre: int | None = None) -> dict:
-        row = await self._bounded(create_category(self.api, nombre, padre), {"frase": MAYBE_STOCK})
+        row = await self._bounded(create_category(self.api, nombre, padre), {"frase": MAYBE_SAVED})
         return row if "frase" in row else {"categoria": row}
 
     async def sugerir_cajon(self, categoria: int) -> dict:
@@ -357,15 +363,16 @@ class Cajonera:
     async def _sugerir_cajon(self, categoria: int, down: dict) -> dict:
         if not await self._ready():
             return down
-        answer = await suggest_drawer(
-            self.api, categoria, self.root_pk, self.simulator.drawers(), self.locations
-        )
-        if answer["direccion"] is not None:
-            self.simulator.store_here(answer["direccion"])
-        return answer
+        # Only an answer: the card lights the drawer when it accepts the answer (guardar_aqui),
+        # so a late suggestion can never light a drawer the user has moved away from.
+        return await suggest_drawer(self.api, categoria, self.root_pk, self.simulator.drawers(), self.locations)
 
     def guardar_aqui(self, direccion: int) -> None:
         """Move the "store it here" light to the drawer the user chose instead of the suggested one."""
         # An unknown address is ignored: lighting nothing must not end a search in progress.
         if any(d.address == direccion for d in self.simulator.drawers()):
             self.simulator.store_here(direccion)
+
+    def guardar_apagar(self) -> None:
+        """Put out the "store it here" light; a search in progress is left alone."""
+        self.simulator.clear_store()

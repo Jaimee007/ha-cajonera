@@ -36,6 +36,13 @@ inventario_retirar:
           min: 1
           max: 100000000
           mode: box
+    pieza_pk:
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 100000000
+          mode: box
     origen:
       example: panel
       selector:
@@ -232,6 +239,8 @@ guardar_aqui:
           min: 0
           max: 31
           mode: box
+
+guardar_apagar:
 
 pieza_crear:
   fields:

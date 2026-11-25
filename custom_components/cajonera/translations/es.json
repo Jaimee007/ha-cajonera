@@ -34,6 +34,10 @@
           "name": "Existencia",
           "description": "Identificador de la existencia en InvenTree (lo usa el panel)."
         },
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree (lo usa el panel). Con él no se busca por nombre."
+        },
         "origen": {
           "name": "Origen",
           "description": "panel o alexa."
@@ -180,7 +184,7 @@
     },
     "sugerir_cajon": {
       "name": "Sugerir cajón",
-      "description": "Sugiere dónde guardar una pieza nueva de una categoría y enciende ese cajón.",
+      "description": "Sugiere dónde guardar una pieza nueva de una categoría. No enciende nada: el panel lo enciende con Guardar aquí.",
       "fields": {
         "categoria": {
           "name": "Categoría",
@@ -197,6 +201,10 @@
           "description": "Dirección del cajón (0 = base)."
         }
       }
+    },
+    "guardar_apagar": {
+      "name": "Apagar guardar aquí",
+      "description": "Apaga la luz magenta de guardar una pieza. No toca una búsqueda en curso."
     },
     "pieza_crear": {
       "name": "Crear pieza",

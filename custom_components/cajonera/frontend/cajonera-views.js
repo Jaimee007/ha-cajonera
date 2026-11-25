@@ -187,7 +187,7 @@ export const viewMethods = {
              <button type="button" data-act="retirar_stock" data-stock="${Number(r.stock)}" ${this._dis(key)}>Retirar</button>`
           : "";
         return `<li>
-          <button type="button" class="link name" data-act="pieza" data-nombre="${esc(r.pieza)}">${esc(r.pieza)}</button>
+          <button type="button" class="link name" data-act="pieza" data-pk="${Number(r.pieza_pk)}">${esc(r.pieza)}</button>
           ${showWhere ? `<span class="where">${esc(r.cajon)}</span>` : ""}
           <span class="qty">${fmtQty(r.cantidad)} uds</span>
           ${r.bajo ? `<span class="low">⚠ bajo</span>` : ""}
@@ -202,7 +202,7 @@ export const viewMethods = {
     if (!parts.length) return "";
     return `<h3>Existencias bajas (${parts.length})</h3><ul class="rows">${parts
       .map(
-        (p) => `<li><button type="button" class="link name" data-act="pieza" data-nombre="${esc(p.pieza)}">${esc(p.pieza)}</button>
+        (p) => `<li><button type="button" class="link name" data-act="pieza" data-pk="${Number(p.pieza_pk)}">${esc(p.pieza)}</button>
           <span class="where">${esc((p.cajones || []).join(", ") || "—")}</span>
           <span class="qty low">${fmtQty(p.total)} / ${fmtQty(p.minimo)}</span></li>`,
       )

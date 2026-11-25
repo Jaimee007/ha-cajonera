@@ -287,6 +287,17 @@ async def test_write_timeout_says_maybe_stock():
     assert (await caj.pieza_crear("  ", 3, 0, 1))["frase"] == "Dime un nombre para la pieza."
 
 
+async def test_idempotent_write_timeouts_do_not_talk_about_quantity():
+    expected = "No sé si se ha guardado. Revisa antes de repetirlo."
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, 1001)], [],
+                         [Category(3, "Tornillos", "Tornillos")])
+    caj = make(fake, deadline=0.2)
+    await caj.sync()
+    fake.delay = 0.5
+    assert (await caj.pieza_editar(5, nombre="Otro")) == {"frase": expected, "hecho": False}
+    assert (await caj.categoria_crear("Nuevas")) == {"frase": expected}
+
+
 async def test_write_failure_changes_no_light_or_context():
     fake = stocked()
     caj = make(fake)
@@ -298,13 +309,37 @@ async def test_write_failure_changes_no_light_or_context():
     assert caj.context is None
 
 
-async def test_sugerir_cajon_lights_store_here():
+async def test_sugerir_cajon_only_answers_and_lights_nothing():
     fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, 1001)], [])
     fake.parts[5] = Part(5, "Tornillo M3x8", 0, 40, category_pk=3)
     caj = make(fake)
     r = await caj.sugerir_cajon(3)
     assert r["direccion"] == 0 and r["cajon"] == "A1"
-    assert _modes(caj) == {0: "guardar", 17: "reposo"}
+    assert set(_modes(caj).values()) == {"reposo"}
+
+
+async def test_sugerir_cajon_leaves_a_search_and_a_tapped_light_alone():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, 1001)], [])
+    fake.parts[5] = Part(5, "Tornillo M3x8", 0, 40, category_pk=3)
+    caj = make(fake)
+    await caj.sync()
+    caj.guardar_aqui(17)  # the user tapped B1 while the suggestion was in flight
+    assert (await caj.sugerir_cajon(3))["direccion"] == 0
+    assert _modes(caj) == {0: "reposo", 17: "guardar"}
+
+
+async def test_guardar_apagar_clears_only_the_store_light():
+    caj = make(stocked())
+    await caj.sync()
+    caj.guardar_apagar()  # nothing lit: no-op
+    assert set(_modes(caj).values()) == {"reposo"}
+    caj.guardar_aqui(17)
+    caj.guardar_apagar()
+    assert set(_modes(caj).values()) == {"reposo"}
+    await caj.buscar("m3")
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
+    caj.guardar_apagar()  # a search in progress is not ours to clear
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
 
 
 async def test_guardar_aqui_moves_the_magenta_light():
@@ -312,6 +347,7 @@ async def test_guardar_aqui_moves_the_magenta_light():
     fake.parts[5] = Part(5, "Tornillo M3x8", 0, 40, category_pk=3)
     caj = make(fake)
     assert (await caj.sugerir_cajon(3))["direccion"] == 0
+    caj.guardar_aqui(0)
     assert _modes(caj) == {0: "guardar", 17: "reposo"}
     caj.guardar_aqui(17)
     assert _modes(caj) == {0: "reposo", 17: "guardar"}
@@ -360,3 +396,67 @@ async def test_categorias_and_categoria_crear():
     fake.fail = True
     assert (await caj.categorias()) == {"categorias": []}
     assert (await caj.sugerir("tuerca")) == {"sugerencias": []}
+
+
+# Part ids for the card (final review I1, I3, minor 7)
+
+def look_alike_inventory(n=12):
+    parts = [Part(100 + i, f"Tornillo M3x{8 + i}", 0, 5) for i in range(n)]
+    stock = [StockItem(200 + i, 100 + i, "", 5.0, 1001) for i in range(n)]
+    return FakeInventory(parts, stock, [])
+
+
+async def test_retirar_by_pieza_pk_works_among_twelve_look_alikes():
+    fake = look_alike_inventory()
+    caj = make(fake)
+    r = await caj.retirar(texto="Tornillo M3x", cantidad=1, cajon="A1")
+    assert not r["hecho"] and fake.removed == []  # the text route cannot tell them apart
+    r = await caj.retirar(cantidad=2, cajon="A1", pieza_pk=111)
+    assert r["hecho"] and fake.removed == [(211, 2)]
+    assert _modes(caj)[0] == "confirmar_ok"
+    assert caj.context == Context(111, 1001, NOW)
+
+
+async def test_retirar_by_pieza_pk_distinguishes_same_name_parts():
+    fake = FakeInventory([Part(5, "Tuerca M4", 0, 4), Part(6, "Tuerca M4", 0, 9)],
+                         [StockItem(9, 5, "", 4.0, 1001), StockItem(10, 6, "", 9.0, 1001)], [])
+    caj = make(fake)
+    r = await caj.retirar(cantidad=3, pieza_pk=6)
+    assert r["hecho"] and fake.removed == [(10, 3)]
+
+
+async def test_retirar_by_pieza_pk_wrong_drawer_writes_nothing():
+    fake = stocked()
+    caj = make(fake)
+    r = await caj.retirar(cantidad=1, cajon="B1", pieza_pk=5)
+    assert r == {"frase": "No hay Tornillo M3x8 en el B1; hay en el A1.", "hecho": False}
+    assert fake.removed == []
+    assert set(_modes(caj).values()) == {"reposo"}
+
+
+async def test_retirar_bad_quantity_with_pieza_pk_still_asks():
+    assert await make(stocked()).retirar(cantidad=0, pieza_pk=5) == {"frase": "Dime cuántas has cogido.", "hecho": False}
+
+
+async def test_buscar_and_contenido_rows_carry_pieza_pk():
+    caj = make(stocked())
+    r = await caj.buscar("m3")
+    assert [row["pieza_pk"] for row in r["resultados"]] == [5]
+    c = await caj.contenido(0)
+    assert [row["pieza_pk"] for row in c["piezas"]] == [5]
+
+
+async def test_pieza_in_no_drawer_clears_old_lights_and_keeps_context():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40), Part(6, "Cinta", 0, 3)],
+                         [StockItem(9, 5, "", 40.0, 1001), StockItem(10, 6, "", 3.0, None)], [])
+    caj = make(fake)
+    await caj.pieza(5)
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
+    sheet = await caj.pieza(6)
+    assert sheet["cajones"] == []
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.simulator._search_timer is None
+    assert caj.context == Context(6, None, NOW)
+    caj.guardar_aqui(17)
+    await caj.pieza(6)
+    assert set(_modes(caj).values()) == {"reposo"}

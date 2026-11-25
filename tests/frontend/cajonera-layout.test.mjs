@@ -168,6 +168,13 @@ test("parseQty rejects ambiguous thousands", () => {
   assert.equal(parseQty("1.000", { allowZero: true }), null);
 });
 
+test("parseQty rejects ambiguous thousands with leading zeros", () => {
+  assert.equal(parseQty("01.000"), null);
+  assert.equal(parseQty("007,000"), null);
+  assert.equal(parseQty("0,125"), 0.125);
+  assert.equal(parseQty("00.125"), 0.125);
+});
+
 test("parseQty accepts leading and trailing separators", () => {
   assert.equal(parseQty(",5"), 0.5);
   assert.equal(parseQty(".5"), 0.5);

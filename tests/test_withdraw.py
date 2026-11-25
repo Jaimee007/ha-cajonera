@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from logic.models import Location, Part, StockItem
-from logic.withdraw import CONTEXT_TTL, Context, withdraw_by_stock, withdraw_by_text
+from logic.withdraw import CONTEXT_TTL, Context, withdraw_by_part, withdraw_by_stock, withdraw_by_text
 from fakes import FakeInventory
 
 NOW = datetime(2026, 11, 24, 12, 0, 0)
@@ -250,3 +250,74 @@ async def test_marking_failure_before_last_unit_removes_nothing():
     r = await call(fake, quantity=4)
     assert r.phrase == "No puedo consultar el inventario ahora mismo."
     assert not r.done and fake.removed == []
+
+
+# Withdrawal by part id (the card's part sheet)
+
+def look_alikes(n=12):
+    parts = [Part(100 + i, f"Tornillo M3x{8 + i}0" if i else "Tornillo M3x8", 0, 5) for i in range(n)]
+    stock = [StockItem(200 + i, 100 + i, "", 5.0, 11) for i in range(n)]
+    return FakeInventory(parts, stock, list(LOCS.values()))
+
+
+async def test_withdraw_by_part_works_past_the_name_search_limit():
+    fake = look_alikes(12)
+    last = fake.parts[111]
+    r = await withdraw_by_part(fake, last.pk, 2, None, NOW, LOCS)
+    assert r.done and fake.removed == [(211, 2)]
+    assert r.phrase == "Hecho. Quedan 3."
+    assert fake.last_notes == "cajonera: panel"
+    assert r.context == Context(111, 11, NOW)
+
+
+async def test_text_route_dead_ends_where_part_route_works():
+    fake = look_alikes(12)
+    text = "tornillo m3"
+    r = await withdraw_by_text(fake, text, 1, None, None, NOW, LOCS)
+    assert not r.done and fake.removed == []
+
+
+async def test_withdraw_by_part_distinguishes_same_name_parts():
+    fake = FakeInventory(
+        [Part(5, "Tuerca M4", 0, 4), Part(6, "Tuerca M4", 0, 9)],
+        [StockItem(9, 5, "", 4.0, 11), StockItem(10, 6, "", 9.0, 12)],
+        list(LOCS.values()),
+    )
+    r = await withdraw_by_part(fake, 6, 3, None, NOW, LOCS)
+    assert r.done and fake.removed == [(10, 3)]
+    assert r.address == 18 and r.phrase == "Hecho. Quedan 6."
+
+
+async def test_withdraw_by_part_refuses_a_wrong_drawer_and_writes_nothing():
+    fake = two_drawers()
+    r = await withdraw_by_part(fake, 5, 3, "A1", NOW, LOCS)
+    assert r.phrase == "No hay Tornillo M3x8 en el A1; hay en el B3 y en el C1."
+    assert not r.done and fake.removed == []
+
+
+async def test_withdraw_by_part_needs_a_drawer_when_there_are_several():
+    fake = two_drawers()
+    r = await withdraw_by_part(fake, 5, 3, None, NOW, LOCS)
+    assert r.phrase == "Hay en el B3 y en el C1, ¿de cuál?"
+    assert fake.removed == []
+    r = await withdraw_by_part(fake, 5, 3, "c1", NOW, LOCS)
+    assert r.done and fake.removed == [(10, 3)]
+    assert r.phrase == "Hecho. Quedan 7 en el C1, 27 en total, por debajo del mínimo de 40."
+
+
+async def test_withdraw_by_part_single_drawer_is_automatic_and_keeps_empty_item():
+    fake = one_drawer(qty=2, minimum=0)
+    r = await withdraw_by_part(fake, 5, 2, None, NOW, LOCS)
+    assert r.done and fake.stock[9].quantity == 0 and fake.stock[9].delete_on_deplete is False
+
+
+async def test_withdraw_by_part_edge_cases():
+    fake = one_drawer()
+    assert (await withdraw_by_part(fake, 5, 0, None, NOW, LOCS)).phrase == "Dime cuántas has cogido."
+    assert (await withdraw_by_part(fake, 5, 99, None, NOW, LOCS)).phrase == "Solo quedan 40 en el B3."
+    out = FakeInventory([Part(5, "Tornillo M3x8", 0, 40)], [StockItem(9, 5, "", 40.0, None)], [])
+    r = await withdraw_by_part(out, 5, 1, None, NOW, LOCS)
+    assert r.phrase == "Hay 40 de Tornillo M3x8, pero no está en ningún cajón." and out.removed == []
+    fake.fail = True
+    assert (await withdraw_by_part(fake, 5, 1, None, NOW, LOCS)).phrase == "No puedo consultar el inventario ahora mismo."
+    assert fake.removed == []

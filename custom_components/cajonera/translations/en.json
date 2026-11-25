@@ -34,6 +34,10 @@
           "name": "Existencia",
           "description": "Identificador de la existencia en InvenTree (lo usa el panel)."
         },
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree (lo usa el panel). Con él no se busca por nombre."
+        },
         "origen": {
           "name": "Origen",
           "description": "panel o alexa."
@@ -180,7 +184,7 @@
     },
     "sugerir_cajon": {
       "name": "Suggest drawer",
-      "description": "Suggests where to store a new part of a category and lights that drawer.",
+      "description": "Suggests where to store a new part of a category. It lights nothing: the card lights it with Store here.",
       "fields": {
         "categoria": {
           "name": "Category",
@@ -197,6 +201,10 @@
           "description": "Drawer address (0 = base)."
         }
       }
+    },
+    "guardar_apagar": {
+      "name": "Stop store here",
+      "description": "Puts out the magenta store-here light. A search in progress is left alone."
     },
     "pieza_crear": {
       "name": "Create part",
