@@ -1,6 +1,6 @@
 # Alexa bridge — design
 
-Date: 2026-11-25 · Status: proposed · Owner of the product decisions: the cabinet's user
+Date: 2026-11-25 · Status: implemented · Owner of the product decisions: the cabinet's user
 
 ## 1. Intent
 

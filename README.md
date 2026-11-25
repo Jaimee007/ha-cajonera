@@ -80,6 +80,12 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | `cajonera.pieza_crear` | Create a part with its initial quantity in a drawer |
 | `cajonera.pieza_editar` | Change only the given details of a part |
 
+## Voice (Alexa)
+
+The skill "mi atlas" can search, add, withdraw and count by voice with the same rules as the card, through the
+`cajonera.voz` service. The Lambda, the interaction-model generator and the steps to deploy them are in
+[alexa/README.md](alexa/README.md).
+
 ## Development
 
 ```
