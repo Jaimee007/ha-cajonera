@@ -64,6 +64,16 @@ async def _single_item(api, items: list[StockItem], location: Location, writes: 
     return item
 
 
+async def _tidy_drawer(api, part_pk: int, location: Location) -> None:
+    """Merge the part's stock items in a drawer into one (the largest survives)."""
+    items = await _items_in(api, part_pk, location)
+    if len(items) > 1:
+        await api.merge_stock([s.pk for s in items], location.pk, "cajonera: fusionar")
+        survivor = await api.get_stock(items[0].pk)
+        if survivor.delete_on_deplete:
+            await api.set_keep_when_empty(survivor.pk)
+
+
 async def _finish(api, phrase: str, part_pk: int, location: Location) -> OpResult:
     low = False
     try:
@@ -151,6 +161,13 @@ async def move_between(
         writes.started = True
         await api.transfer_stock(item.pk, moved, target.pk, "cajonera: mover")
         phrase = f"Hecho. He movido {fmt_qty(moved)} del {source.name} al {target.name}."
+        # A partial transfer creates a new stock item in the target, next to any the part
+        # already has there. Tidy up so the drawer keeps one item per part. The move is already
+        # done, so a failure here must not turn it into a failure.
+        try:
+            await _tidy_drawer(api, part_pk, target)
+        except InvenTreeError:
+            pass
         return await _finish(api, phrase, part_pk, target)
     except InvenTreeError:
         return OpResult(MAYBE_STOCK if writes.started else DOWN_PHRASE)

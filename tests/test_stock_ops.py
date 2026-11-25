@@ -228,3 +228,47 @@ async def test_low_flag_after_add():
     assert r.done and r.low is True
     fake = one_in_b1(minimum=20)
     assert (await add_to_drawer(fake, 5, 17, 10, LOCS)).low is False
+
+
+async def test_move_into_a_drawer_that_already_has_the_part_leaves_one_item():
+    """A partial move used to leave two stock items in the destination (33 + 7 in B1, 7 new in B3)."""
+    fake = fake_with([item(9, 40), item(10, 5, loc=12)])
+    r = await move_between(fake, 5, 17, 18, 7, LOCS)
+    assert r.done and r.phrase == "Hecho. He movido 7 del B1 al B3."
+    in_b3 = [s for s in fake.stock.values() if s.location_pk == 12]
+    assert len(in_b3) == 1 and in_b3[0].quantity == 12
+    in_b1 = [s for s in fake.stock.values() if s.location_pk == 11]
+    assert len(in_b1) == 1 and in_b1[0].quantity == 33
+
+
+async def test_move_back_and_forth_never_accumulates_items():
+    """The reported case: move 7 away, then move 7 back."""
+    fake = one_in_b1()
+    await move_between(fake, 5, 17, 18, 7, LOCS)
+    await move_between(fake, 5, 18, 17, 7, LOCS)
+    for pk in (11, 12):
+        assert len([s for s in fake.stock.values() if s.location_pk == pk and s.quantity > 0]) <= 1
+    in_b1 = [s for s in fake.stock.values() if s.location_pk == 11]
+    assert len(in_b1) == 1 and in_b1[0].quantity == 40
+
+
+async def test_move_into_empty_destination_needs_no_merge():
+    fake = one_in_b1()
+    await move_between(fake, 5, 17, 18, 7, LOCS)
+    assert fake.merged == []
+
+
+async def test_merge_failure_after_the_transfer_still_reports_done():
+    """The stock was moved; a failing tidy-up must not look like a failed move (spec 4.4 wording)."""
+    fake = fake_with([item(9, 40), item(10, 5, loc=12)])
+    fake.fail_on = {"merge_stock"}
+    r = await move_between(fake, 5, 17, 18, 7, LOCS)
+    assert r.done and "He movido 7 del B1 al B3" in r.phrase
+    assert fake.transferred  # the transfer happened
+
+
+async def test_moving_everything_leaves_a_kept_item_at_zero_in_source():
+    fake = fake_with([item(9, 40), item(10, 5, loc=12)])
+    await move_between(fake, 5, 17, 18, None, LOCS)
+    in_b3 = [s for s in fake.stock.values() if s.location_pk == 12]
+    assert len(in_b3) == 1 and in_b3[0].quantity == 45
