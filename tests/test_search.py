@@ -107,3 +107,36 @@ async def test_drawer_contents_lists_hits():
     stock = [StockItem(9, 5, "Tornillo M3x8", 40.0, 11), StockItem(10, 5, "Tornillo M3x8", 3.0, 12)]
     hits = await drawer_contents(inv([M3x8], stock), B3)
     assert hits == [Hit(M3x8, StockItem(9, 5, "Tornillo M3x8", 40.0, 11), B3)]
+
+
+async def test_drawer_contents_one_row_per_part_summing_items():
+    # A kept-at-zero item next to a hand-made one: one part, one row, the sum.
+    stock = [StockItem(2, 5, "Tornillo M3x8", 0.0, 11), StockItem(6, 5, "Tornillo M3x8", 12.0, 11)]
+    hits = await drawer_contents(inv([M3x8], stock), B3)
+    assert hits == [Hit(M3x8, StockItem(6, 5, "Tornillo M3x8", 12.0, 11), B3)]
+
+
+async def test_drawer_contents_stock_is_largest_item_ties_lowest_pk():
+    stock = [StockItem(9, 5, "T", 3.0, 11), StockItem(4, 5, "T", 3.0, 11), StockItem(7, 5, "T", 1.0, 11)]
+    hits = await drawer_contents(inv([M3x8], stock), B3)
+    assert [(h.stock.pk, h.stock.quantity) for h in hits] == [(4, 7.0)]
+
+
+async def test_drawer_contents_two_parts_two_rows_sorted_by_name():
+    parts = [Part(5, "tornillo", 0, 1), Part(6, "Arandela", 0, 1)]
+    stock = [StockItem(9, 5, "", 1.0, 11), StockItem(10, 6, "", 1.0, 11)]
+    hits = await drawer_contents(inv(parts, stock), B3)
+    assert [h.part.name for h in hits] == ["Arandela", "tornillo"]
+
+
+async def test_drawer_contents_kept_at_zero_part_keeps_its_row():
+    hits = await drawer_contents(inv([M3x8], [StockItem(2, 5, "T", 0.0, 11)]), B3)
+    assert [(h.stock.pk, h.stock.quantity) for h in hits] == [(2, 0.0)]
+
+
+async def test_search_groups_items_of_one_part_per_drawer():
+    part = Part(5, "Tornillo M3x8", 0, 17)
+    stock = [StockItem(2, 5, "", 0.0, 11), StockItem(6, 5, "", 12.0, 11), StockItem(7, 5, "", 5.0, 12)]
+    r = await search(inv([part], stock), "m3", LOCS)
+    assert [(h.location.name, h.stock.pk, h.stock.quantity) for h in r.hits] == [("B3", 6, 12.0), ("C1", 7, 5.0)]
+    assert r.phrase == "Hay en el B3 y en el C1, 17 en total."

@@ -13,6 +13,9 @@ const ACTIONS = [
   ["actualizar", "Actualizar a"],
 ];
 
+// The quantity field and the pending flag of a Retirar button: one per part per drawer.
+export const withdrawKey = (pieza_pk, cajon) => `r_${Number(pieza_pk)}_${cajon}`;
+
 export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -141,7 +144,7 @@ export const viewMethods = {
       : "";
     const contents = this._contents
       ? `<h3>Cajón ${esc(this._contents.cajon ?? "?")}</h3>
-         ${this._contents.piezas?.length ? this._partRows(this._contents.piezas, false, true) : `<p class="empty">${esc(this._contents.frase ?? "Vacío.")}</p>`}`
+         ${this._contents.piezas?.length ? this._partRows(this._contents.piezas.map((p) => ({ ...p, cajon: this._contents.cajon })), false, true) : `<p class="empty">${esc(this._contents.frase ?? "Vacío.")}</p>`}`
       : "";
     return `
       <form class="search" data-form="buscar" role="search">
@@ -181,10 +184,10 @@ export const viewMethods = {
     if (!rows?.length) return "";
     return `<ul class="rows">${rows
       .map((r) => {
-        const key = `r_${r.stock}`;
+        const key = withdrawKey(r.pieza_pk, r.cajon);
         const picker = withdraw
-          ? `<input data-f="${key}" type="text" inputmode="decimal" value="${esc(this._form[key] ?? "1")}" aria-label="Cantidad a retirar">
-             <button type="button" data-act="retirar_stock" data-stock="${Number(r.stock)}" ${this._dis(key)}>Retirar</button>`
+          ? `<input data-f="${esc(key)}" type="text" inputmode="decimal" value="${esc(this._form[key] ?? "1")}" aria-label="Cantidad a retirar">
+             <button type="button" data-act="retirar_stock" data-pk="${Number(r.pieza_pk)}" data-cajon="${esc(r.cajon)}" ${this._dis(key)}>Retirar</button>`
           : "";
         return `<li>
           <button type="button" class="link name" data-act="pieza" data-pk="${Number(r.pieza_pk)}">${esc(r.pieza)}</button>

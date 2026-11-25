@@ -10,7 +10,7 @@
 //   type: custom:cajonera-card
 
 import { createSequencer, debounceMs, defaultDrawer, fmtQty, litFromRows, minChars, parseQty, suggestionRows } from "./cajonera-layout.js";
-import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods } from "./cajonera-views.js";
+import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods, withdrawKey } from "./cajonera-views.js";
 
 const litKey = (lit) => `${lit.direcciones.join(",")}|${lit.bajos.join(",")}`;
 const BAD_QTY = "Dime una cantidad válida.";
@@ -295,18 +295,20 @@ class CajoneraCard extends HTMLElement {
     this._render();
   }
 
-  async _withdrawStock(stock) {
-    const key = `r_${stock}`;
+  // Withdraws from a part's drawer as a whole: the server takes it from the drawer's items, so it does not
+  // matter how many stock items InvenTree keeps there.
+  async _withdrawStock(pieza_pk, cajon) {
+    const key = withdrawKey(pieza_pk, cajon);
     if (this._pending.has(key)) return;
     const cantidad = parseQty(this._form[key] ?? "1");
     if (cantidad === null) return this._toast(BAD_QTY);
-    const res = await this._call("inventario_retirar", { stock, cantidad, origen: "panel" }, key);
+    const res = await this._call("inventario_retirar", { pieza_pk, cajon, cantidad, origen: "panel" }, key);
     if (!res) return;
     this._toast(res.frase);
     if (!res.hecho) return;
     if (this._results?.resultados) {
       this._results.resultados = this._results.resultados.map((r) =>
-        r.stock === stock ? { ...r, cantidad: r.cantidad - cantidad } : r,
+        r.pieza_pk === pieza_pk && r.cajon === cajon ? { ...r, cantidad: r.cantidad - cantidad } : r,
       );
     }
     if (this._selected !== null) await this._openDrawer(this._selected, false);
@@ -675,7 +677,7 @@ class CajoneraCard extends HTMLElement {
       case "cat":
         return this._createCategory(ds.p);
       case "retirar_stock":
-        return this._withdrawStock(Number(ds.stock));
+        return this._withdrawStock(Number(ds.pk), ds.cajon);
       case "pieza":
         return Number.isFinite(Number(ds.pk)) ? this._openPart(Number(ds.pk)) : undefined;
       case "mantenimiento":

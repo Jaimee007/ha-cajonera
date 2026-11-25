@@ -506,3 +506,63 @@ async def test_pieza_in_no_drawer_clears_old_lights_and_keeps_context():
     caj.guardar_aqui(17)
     await caj.pieza(6)
     assert set(_modes(caj).values()) == {"reposo"}
+
+
+def _eggs(items, minimum=10, total=12):
+    # Two stock items of one part in B1 (pk 1002): a kept-at-zero one and one made by hand.
+    return FakeInventory([Part(6, "Huevos", minimum, total)], items, [])
+
+
+async def test_contenido_one_row_per_part_with_summed_quantity():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False), StockItem(6, 6, "", 12.0, 1002)])
+    r = await make(fake).contenido(17)
+    assert r["piezas"] == [{"stock": 6, "pieza_pk": 6, "pieza": "Huevos", "cantidad": 12.0, "bajo": False}]
+
+
+async def test_contenido_two_parts_two_rows_and_single_zero_item_row():
+    fake = FakeInventory([Part(6, "Huevos", 0, 0), Part(5, "Arandela", 0, 3)],
+                         [StockItem(2, 6, "", 0.0, 1002, False), StockItem(9, 5, "", 3.0, 1002)], [])
+    r = await make(fake).contenido(17)
+    assert [(p["pieza"], p["cantidad"]) for p in r["piezas"]] == [("Arandela", 3.0), ("Huevos", 0.0)]
+
+
+async def test_buscar_one_row_per_part_per_drawer():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False), StockItem(6, 6, "", 12.0, 1002)])
+    r = await make(fake).buscar("huevos")
+    assert [(x["stock"], x["cantidad"], x["cajon"]) for x in r["resultados"]] == [(6, 12.0, "B1")]
+
+
+async def test_contenido_refreshes_a_stale_low_list():
+    # InvenTree changed by hand: the part is no longer low, but the report still says so.
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False)], total=0)
+    caj = make(fake)
+    await caj.tick()
+    assert [lp.part.pk for lp in caj.low.parts] == [6]
+    fake.stock[6] = StockItem(6, 6, "", 12.0, 1002)
+    fake.parts[6] = Part(6, "Huevos", 10, 12)
+    await caj.contenido(17)
+    await caj.drain()
+    assert caj.low.parts == []
+
+
+async def test_reads_refresh_low_at_most_one_at_a_time():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False)], total=0)
+    caj = make(fake)
+    await caj.sync()
+    calls = []
+    orig = caj.refresh_low
+
+    async def counting():
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        await orig()
+
+    caj.refresh_low = counting
+    await caj.contenido(17)
+    await caj.buscar("huevos")
+    await caj.pieza(6)
+    await caj.drain()
+    assert len(calls) == 1
+    await caj.contenido(17)  # nothing in flight any more: a new one may start
+    await caj.drain()
+    assert len(calls) == 2
