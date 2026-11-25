@@ -98,6 +98,17 @@ sugerir:
       selector:
         text:
 
+iluminar_busqueda:
+  fields:
+    direcciones:
+      example: "[0, 17]"
+      selector:
+        object:
+    bajos:
+      example: "[17]"
+      selector:
+        object:
+
 pieza:
   fields:
     pieza_pk:

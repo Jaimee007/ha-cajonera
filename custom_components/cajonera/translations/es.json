@@ -96,6 +96,20 @@
         }
       }
     },
+    "iluminar_busqueda": {
+      "name": "Iluminar búsqueda",
+      "description": "Enciende los cajones de las sugerencias que muestra el panel. Una lista vacía apaga todas las luces de búsqueda.",
+      "fields": {
+        "direcciones": {
+          "name": "Direcciones",
+          "description": "Direcciones de los cajones a encender (máximo 10)."
+        },
+        "bajos": {
+          "name": "Bajos",
+          "description": "Direcciones de los cajones con existencias bajas, que se encienden en naranja."
+        }
+      }
+    },
     "pieza": {
       "name": "Ficha de pieza",
       "description": "Devuelve la ficha de una pieza, enciende sus cajones y la recuerda como última pieza.",

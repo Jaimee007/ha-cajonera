@@ -26,7 +26,7 @@ from .context import context_after_search
 from .inventree import InvenTreeError
 from .low_stock import LowStockReport, low_stock_report
 from .models import Location
-from .search import DOWN_PHRASE, drawer_contents, search
+from .search import DOWN_PHRASE, MAX_LIT, drawer_contents, search
 from .simulator import DrawerSimulator
 from .stock_ops import INVALID_QTY, MAYBE_STOCK, OpResult, add_to_drawer, count_drawer, move_between
 from .sync import apply_sync, plan_sync
@@ -251,8 +251,19 @@ class Cajonera:
     async def _sugerir(self, texto: str | None) -> dict:
         if not await self._ready():
             return {"sugerencias": []}
-        # Typing into the card must never light a drawer or touch the context.
+        # This only answers: the card lights the drawers with iluminar_busqueda when it accepts the answer.
         return {"sugerencias": await suggest(self.api, texto or "", self.locations)}
+
+    def iluminar_busqueda(self, direcciones: list[int], bajos: list[int]) -> None:
+        """Light the drawers of the suggestions the card shows; an empty list puts every search light out.
+
+        Unlike `sugerir`, which only answers, this is the card's explicit order, given when it accepts an
+        answer, so a late answer can never light drawers for text the user has moved on from. The context
+        is not touched: nothing was taken or chosen yet.
+        """
+        real = {d.address for d in self.simulator.drawers()}
+        addresses = [a for a in dict.fromkeys(direcciones) if a in real][:MAX_LIT]
+        self.simulator.search(addresses, set(bajos) & set(addresses))
 
     async def pieza(self, pieza_pk: int) -> dict:
         return await self._bounded(self._pieza(pieza_pk), {"frase": DOWN_PHRASE})

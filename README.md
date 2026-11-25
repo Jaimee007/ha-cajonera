@@ -64,6 +64,7 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | `cajonera.redescubrir` | Map the cabinet again and sync its locations |
 | `cajonera.simular_apertura` | Open or close a simulated drawer (simulated drawers only) |
 | `cajonera.sugerir` | Suggest parts while typing, without lighting any drawer |
+| `cajonera.iluminar_busqueda` | Light the drawers of the suggestions the card shows while typing (an empty list puts them out) |
 | `cajonera.pieza` | Return a part's sheet, light its drawers and remember it as the last part |
 | `cajonera.inventario_anadir` | Add units of a part to a drawer |
 | `cajonera.inventario_actualizar` | Set the counted quantity of a part in a drawer |

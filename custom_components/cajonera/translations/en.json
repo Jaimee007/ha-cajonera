@@ -96,6 +96,20 @@
         }
       }
     },
+    "iluminar_busqueda": {
+      "name": "Light search",
+      "description": "Lights the drawers of the suggestions the card shows. An empty list puts every search light out.",
+      "fields": {
+        "direcciones": {
+          "name": "Addresses",
+          "description": "Addresses of the drawers to light (at most 10)."
+        },
+        "bajos": {
+          "name": "Low",
+          "description": "Addresses of the drawers with low stock, which light in orange."
+        }
+      }
+    },
     "pieza": {
       "name": "Part sheet",
       "description": "Returns a part's sheet, lights its drawers and remembers it as the last part.",

@@ -200,8 +200,54 @@ async def test_sugerir_has_no_side_effects():
     caj = make(stocked())
     r = await caj.sugerir("m3")
     assert [s["nombre"] for s in r["sugerencias"]] == ["Tornillo M3x8"]
+    assert r["sugerencias"][0]["direcciones"] == [0]
     assert set(_modes(caj).values()) == {"reposo"}
     assert caj.context is None
+
+
+async def test_iluminar_busqueda_lights_drawers_and_marks_low_ones():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([0, 17], [17])
+    assert _modes(caj) == {0: "buscado", 17: "buscado_bajo"}
+
+
+async def test_iluminar_busqueda_ignores_unknown_addresses_and_duplicates():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([30, 0, 0], [30, 0])
+    assert _modes(caj) == {0: "buscado_bajo", 17: "reposo"}
+    caj.iluminar_busqueda([30], [])  # nothing real to light: everything goes out
+    assert set(_modes(caj).values()) == {"reposo"}
+
+
+async def test_iluminar_busqueda_lights_at_most_ten_drawers():
+    drawers = [Drawer(a, a, 0) for a in range(12)]
+    caj = make(stocked(), drawers=drawers)
+    caj.iluminar_busqueda(list(range(12)), [])
+    lit = [a for a, mode in _modes(caj).items() if mode == "buscado"]
+    assert lit == list(range(10))
+
+
+async def test_iluminar_busqueda_empty_list_puts_every_search_light_out():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([0, 17], [])
+    caj.iluminar_busqueda([], [])
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.simulator._search_timer is None
+
+
+async def test_iluminar_busqueda_leaves_the_context_alone():
+    caj = make(stocked())
+    await caj.pieza(5)
+    before = caj.context
+    assert before is not None
+    caj.iluminar_busqueda([17], [])
+    assert _modes(caj) == {0: "reposo", 17: "buscado"}
+    assert caj.context == before
+    caj.iluminar_busqueda([], [])
+    assert caj.context == before
 
 
 async def test_pieza_lights_drawers_and_sets_context():

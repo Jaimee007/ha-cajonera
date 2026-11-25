@@ -38,6 +38,7 @@ class CajoneraCard extends HTMLElement {
     this._timer = null;
     this._sugs = []; // rows from suggestionRows()
     this._hi = -1; // highlighted suggestion
+    this._litBySuggest = false; // the cabinet shows drawers lit by the suggestions (iluminar_busqueda)
     this._results = null; // { frase, resultados } from inventario_buscar
     this._selected = null; // drawer address whose contents are shown
     this._contents = null; // { cajon, piezas }
@@ -157,6 +158,7 @@ class CajoneraCard extends HTMLElement {
     clearTimeout(this._timer);
     this._seq.next(); // whatever is in flight answers older text
     if (value.trim().length < minChars) {
+      this._clearSuggestLight();
       if (this._sugs.length) {
         this._sugs = [];
         this._renderSuggestions();
@@ -172,7 +174,27 @@ class CajoneraCard extends HTMLElement {
     if (!this._seq.accept(n) || this._screen !== "buscar" || !res) return;
     this._sugs = suggestionRows(res.sugerencias, texto);
     this._hi = -1;
+    this._lightSuggestions();
     this._renderSuggestions();
+  }
+
+  // The drawers of the suggestions on screen light up while typing. The card lights them itself, and only
+  // when it accepts an answer, so a late answer can never light drawers for text the user moved on from.
+  _lightSuggestions() {
+    const rows = this._sugs.filter((r) => !r.crear);
+    const direcciones = [...new Set(rows.flatMap((r) => r.direcciones ?? []))];
+    const bajos = [...new Set(rows.filter((r) => r.bajo).flatMap((r) => r.direcciones ?? []))];
+    if (!direcciones.length) return this._clearSuggestLight();
+    this._litBySuggest = true;
+    this._callNoResponse("iluminar_busqueda", { direcciones, bajos });
+  }
+
+  // Put the suggestion lights out, but only if they are lit: opening a sheet or running the full search
+  // relights by itself, and a clear would only make the cabinet flicker.
+  _clearSuggestLight() {
+    if (!this._litBySuggest) return;
+    this._litBySuggest = false;
+    this._callNoResponse("iluminar_busqueda", { direcciones: [], bajos: [] });
   }
 
   _closeSuggestions() {
@@ -211,6 +233,7 @@ class CajoneraCard extends HTMLElement {
     } else if (e.key === "Escape" && n) {
       e.preventDefault();
       this._closeSuggestions();
+      this._clearSuggestLight();
       this._renderSuggestions();
     }
   }
@@ -224,6 +247,7 @@ class CajoneraCard extends HTMLElement {
 
   async _search(texto) {
     this._closeSuggestions();
+    this._litBySuggest = false; // inventario_buscar lights the drawers by itself
     const res = await this._call("inventario_buscar", { texto, origen: "panel" }, "buscar");
     if (!res) return;
     this._results = res;
@@ -233,6 +257,8 @@ class CajoneraCard extends HTMLElement {
 
   async _openPart(pk) {
     if (this._pending.has("open")) return;
+    clearTimeout(this._timer);
+    this._seq.next(); // a late suggestions answer must not light drawers over the sheet's
     const res = await this._call("pieza", { pieza_pk: pk }, "open");
     if (!res) return;
     if (res.pieza_pk == null) {
@@ -303,6 +329,7 @@ class CajoneraCard extends HTMLElement {
   _showSheet(sheet) {
     this._leaveCreate();
     this._closeSuggestions();
+    this._litBySuggest = false; // pieza lit the part's drawers by itself
     this._sheet = sheet;
     this._screen = "ficha";
     const d = defaultDrawer(sheet.cajones);
@@ -443,6 +470,7 @@ class CajoneraCard extends HTMLElement {
 
   _startCreate(nombre) {
     this._closeSuggestions();
+    this._clearSuggestLight();
     this._catSeq.next(); // a late answer from an earlier create form must not land on this one
     this._screen = "crear";
     Object.assign(this._form, {

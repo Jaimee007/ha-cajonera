@@ -162,6 +162,9 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def sugerir(call: ServiceCall) -> ServiceResponse:
         return await cajonera.sugerir(call.data.get("texto"))
 
+    async def iluminar_busqueda(call: ServiceCall) -> None:
+        cajonera.iluminar_busqueda(call.data["direcciones"], call.data["bajos"])
+
     async def pieza(call: ServiceCall) -> ServiceResponse:
         return await cajonera.pieza(call.data["pieza_pk"])
 
@@ -258,6 +261,13 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         sugerir,
         schema=vol.Schema({vol.Optional("texto"): OPTIONAL_TEXT}),
         supports_response=SupportsResponse.ONLY,
+    )
+    # The card lights the drawers of the suggestions it shows; an empty list puts them out.
+    hass.services.async_register(
+        DOMAIN,
+        "iluminar_busqueda",
+        iluminar_busqueda,
+        schema=vol.Schema({vol.Optional("direcciones", default=[]): [ID], vol.Optional("bajos", default=[]): [ID]}),
     )
     hass.services.async_register(
         DOMAIN,
