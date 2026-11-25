@@ -9,6 +9,7 @@ import {
   gridCells,
   litFromRows,
   minChars,
+  panelModel,
   parseQty,
   rowLabel,
   suggestionRows,
@@ -239,4 +240,41 @@ test("litFromRows de-duplicates and sorts; bajos are a subset of direcciones", (
   assert.deepEqual(direcciones, [5, 21, 30, 40]);
   assert.deepEqual(bajos, [5, 21]);
   assert.ok(bajos.every((a) => direcciones.includes(a)));
+});
+
+test("panelModel: nothing to show", () => {
+  assert.equal(panelModel(null), null);
+  assert.equal(panelModel(undefined), null);
+});
+
+test("panelModel: search results show their phrase, the drawer column and the typed text", () => {
+  const rows = [{ pieza_pk: 1, pieza: "Tornillo", cajon: "B3", cantidad: 4 }];
+  const m = panelModel({ tipo: "resultados", frase: "Hay 4 tornillos.", resultados: rows, texto: "torn" });
+  assert.equal(m.title, "Resultados de «torn»");
+  assert.equal(m.phrase, "Hay 4 tornillos.");
+  assert.deepEqual(m.rows, rows);
+  assert.equal(m.showWhere, true);
+});
+
+test("panelModel: a search that found nothing has a phrase and no rows", () => {
+  const m = panelModel({ tipo: "resultados", frase: "No encuentro nada.", resultados: [], texto: "zzz" });
+  assert.equal(m.phrase, "No encuentro nada.");
+  assert.deepEqual(m.rows, []);
+});
+
+test("panelModel: drawer contents carry the drawer name on every row and hide the drawer column", () => {
+  const m = panelModel({ tipo: "cajon", cajon: "B3", direccion: 17, piezas: [{ pieza_pk: 1, pieza: "Tornillo", cantidad: 4 }] });
+  assert.equal(m.title, "Cajón B3");
+  assert.equal(m.showWhere, false);
+  assert.deepEqual(m.rows, [{ pieza_pk: 1, pieza: "Tornillo", cantidad: 4, cajon: "B3" }]);
+  assert.equal(m.phrase, "");
+});
+
+test("panelModel: an empty drawer says so, with the server's phrase when there is one", () => {
+  assert.equal(panelModel({ tipo: "cajon", cajon: "B3", direccion: 17, piezas: [] }).phrase, "Vacío.");
+  assert.equal(panelModel({ tipo: "cajon", cajon: "B3", direccion: 17, piezas: [], frase: "El cajón B3 está vacío." }).phrase, "El cajón B3 está vacío.");
+});
+
+test("panelModel: a drawer without a name is titled with a question mark", () => {
+  assert.equal(panelModel({ tipo: "cajon", cajon: null, direccion: 17, piezas: [] }).title, "Cajón ?");
 });

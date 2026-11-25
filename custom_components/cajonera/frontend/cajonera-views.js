@@ -4,7 +4,7 @@
 
 // Same version query as the entry module (see cajonera-card.js): one instance of layout.
 const V = new URL(import.meta.url).search;
-const { fmtQty, gridCells, rowLabel } = await import(`./cajonera-layout.js${V}`);
+const { fmtQty, gridCells, panelModel, rowLabel } = await import(`./cajonera-layout.js${V}`);
 
 export const MAP = "sensor.cajonera_mapa";
 export const LOW = "sensor.cajonera_existencias_bajas";
@@ -142,13 +142,6 @@ export const viewMethods = {
 
   _searchHtml() {
     const q = this._form.q ?? "";
-    const results = this._results
-      ? `<p class="phrase">${esc(this._results.frase)}</p>${this._partRows(this._results.resultados, true, true)}`
-      : "";
-    const contents = this._contents
-      ? `<h3>Cajón ${esc(this._contents.cajon ?? "?")}</h3>
-         ${this._contents.piezas?.length ? this._partRows(this._contents.piezas.map((p) => ({ ...p, cajon: this._contents.cajon })), false, true) : `<p class="empty">${esc(this._contents.frase ?? "Vacío.")}</p>`}`
-      : "";
     return `
       <form class="search" data-form="buscar" role="search">
         <input data-f="q" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off"
@@ -158,14 +151,26 @@ export const viewMethods = {
       </form>
       <div data-live="sugs">${this._sugsHtml()}</div>
       ${this._pending.has("open") ? `<p class="phrase">Abriendo ficha…</p>` : ""}
-      ${results}
       <div data-live="grid">${this._gridHtml()}</div>
-      ${contents}
+      <div data-panel>${this._panelHtml()}</div>
       <div data-live="low">${this._lowHtml()}</div>
       <div class="actions">
         <button type="button" class="secondary" data-act="mantenimiento" data-service="redescubrir" ${this._dis("redescubrir")}>Redescubrir cajonera</button>
         <button type="button" class="secondary" data-act="mantenimiento" data-service="sincronizar_ubicaciones" ${this._dis("sincronizar_ubicaciones")}>Sincronizar ubicaciones</button>
       </div>`;
+  },
+
+  // The one panel below the grid: the last action wins (search results or the tapped drawer's contents).
+  // It sits below the grid so the grid never shifts under the finger. Not a [data-live] region: only _render() redraws it.
+  _panelHtml() {
+    const m = panelModel(this._panel);
+    if (!m) return "";
+    const back =
+      this._panel.tipo === "cajon" && this._lastSearch
+        ? `<button type="button" class="link" data-act="volver_resultados">← Volver a los resultados</button>`
+        : "";
+    const phrase = m.phrase ? `<p class="${this._panel.tipo === "cajon" ? "empty" : "phrase"}">${esc(m.phrase)}</p>` : "";
+    return `<h3>${esc(m.title)}</h3>${back}${phrase}${this._partRows(m.rows, m.showWhere, true)}`;
   },
 
   _sugsHtml() {

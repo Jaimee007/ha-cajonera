@@ -46,9 +46,12 @@ class CajoneraCard extends HTMLElement {
     this._litBySuggest = false; // the cabinet shows drawers lit by the suggestions (iluminar_busqueda)
     this._lastLit = null; // { direcciones, bajos } last sent by the suggestions; meaningful while _litBySuggest
     this._selLit = false; // the cabinet shows the drawer tapped on the grid (seleccionar), cyan for 30 s
-    this._results = null; // { frase, resultados } from inventario_buscar
-    this._selected = null; // drawer address whose contents are shown
-    this._contents = null; // { cajon, piezas }
+    // One panel below the grid, the last action wins: null | { tipo: "resultados", frase, resultados, texto }
+    // (inventario_buscar) | { tipo: "cajon", cajon, direccion, piezas, frase } (contenido_cajon).
+    this._panel = null;
+    this._panelSeq = createSequencer(); // a slow answer must not replace what a later action put in the panel
+    this._lastSearch = null; // the last results that had hits, so the drawer view can go back to them
+    this._selected = null; // drawer address tapped on the grid (the panel shows its contents)
     // Part sheet, create and edit
     this._sheet = null; // answer of `pieza`
     this._categories = null; // [{ pk, nombre, ruta }], null until loaded
@@ -284,12 +287,15 @@ class CajoneraCard extends HTMLElement {
   async _search(texto) {
     this._closeSuggestions();
     this._litBySuggest = false; // inventario_buscar lights the drawers by itself
+    const n = this._panelSeq.next();
     const res = await this._call("inventario_buscar", { texto, origen: "panel" }, "buscar");
-    if (!res) return;
+    if (!res || !this._panelSeq.accept(n)) return; // a drawer tapped meanwhile is the last action
     // Hits relight the cabinet; a search that finds nothing lights nothing, so the tapped drawer is put out.
     if (res.resultados?.length) this._selLit = false;
     else this._dropSelection();
-    this._results = res;
+    this._selected = null; // the panel no longer shows a drawer
+    this._panel = { ...res, tipo: "resultados", texto };
+    this._lastSearch = res.resultados?.length ? this._panel : null;
     this._toast(res.frase);
     this._render();
   }
@@ -309,6 +315,7 @@ class CajoneraCard extends HTMLElement {
 
   async _openDrawer(address, identify = true) {
     this._selected = address;
+    const n = this._panelSeq.next();
     if (identify) {
       // One light at a time: the tapped drawer alone, for 30 s. It replaces the suggestion and search lights.
       this._litBySuggest = false;
@@ -317,7 +324,18 @@ class CajoneraCard extends HTMLElement {
       this._callNoResponse("seleccionar", { direccion: address });
     }
     const res = await this._call("contenido_cajon", { direccion: address });
-    this._contents = res;
+    if (!this._panelSeq.accept(n)) return; // a later search or tap owns the panel
+    if (res) this._panel = { ...res, tipo: "cajon", direccion: address };
+    this._render();
+  }
+
+  // Back from a drawer to the last results. The drawer view is gone, so its light goes out with it.
+  _backToResults() {
+    if (!this._lastSearch) return;
+    this._panelSeq.next(); // drop a drawer answer still in flight
+    this._dropSelection();
+    this._selected = null;
+    this._panel = this._lastSearch;
     this._render();
   }
 
@@ -332,12 +350,19 @@ class CajoneraCard extends HTMLElement {
     if (!res) return;
     this._toast(res.frase);
     if (!res.hecho) return;
-    if (this._results?.resultados) {
-      this._results.resultados = this._results.resultados.map((r) =>
-        r.pieza_pk === pieza_pk && r.cajon === cajon ? { ...r, cantidad: r.cantidad - cantidad } : r,
-      );
+    // The remembered results follow the withdrawal too, so going back from a drawer shows fresh numbers.
+    // The panel is that same object while it shows results, so it is swapped along with it.
+    const last = this._lastSearch;
+    if (last) {
+      this._lastSearch = {
+        ...last,
+        resultados: last.resultados.map((r) =>
+          r.pieza_pk === pieza_pk && r.cajon === cajon ? { ...r, cantidad: r.cantidad - cantidad } : r,
+        ),
+      };
+      if (this._panel === last) this._panel = this._lastSearch;
     }
-    if (this._selected !== null) await this._openDrawer(this._selected, false);
+    if (this._panel?.tipo === "cajon") await this._openDrawer(this._panel.direccion, false);
     this._render();
   }
 
@@ -704,6 +729,8 @@ class CajoneraCard extends HTMLElement {
         return this._exists && this._openPart(this._exists.pk);
       case "cat":
         return this._createCategory(ds.p);
+      case "volver_resultados":
+        return this._backToResults();
       case "retirar_stock":
         return this._withdrawStock(Number(ds.pk), ds.cajon);
       case "pieza":

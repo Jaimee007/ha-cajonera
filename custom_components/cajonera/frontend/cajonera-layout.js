@@ -130,3 +130,24 @@ export function defaultDrawer(cajones) {
   }
   return best.direccion;
 }
+
+export function panelModel(panel) {
+  // What the single panel below the grid shows: search results or the contents of a tapped drawer.
+  // Drawer rows get the drawer name (the server's rows do not carry it) and hide the drawer column.
+  if (!panel) return null;
+  if (panel.tipo === "resultados") {
+    return {
+      title: `Resultados de «${panel.texto ?? ""}»`,
+      phrase: panel.frase ?? "",
+      rows: panel.resultados ?? [],
+      showWhere: true,
+    };
+  }
+  const piezas = panel.piezas ?? [];
+  return {
+    title: `Cajón ${panel.cajon ?? "?"}`,
+    phrase: piezas.length ? "" : (panel.frase ?? "Vacío."),
+    rows: piezas.map((p) => ({ ...p, cajon: panel.cajon })),
+    showWhere: false,
+  };
+}
