@@ -11,6 +11,24 @@ See alexa/README.md and docs/superpowers/specs/2026-11-25-alexa-bridge-design.md
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+
+import urllib3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# One pool for every warm invocation: no new TLS handshake per request.
+_http = urllib3.PoolManager()
+
+HA_TIMEOUT = 4.0  # seconds the HA call may take; Alexa gives the whole skill 8
+USER_AGENT = "MiAtlasAlexaSkill/1.0"  # Cloudflare answers 403 to Python's default User-Agent
+NOT_WRITTEN = "No he podido hablar con Home Assistant, no he cambiado nada."
+MAYBE_WRITTEN = "No sé si se ha registrado. Pregúntame cuánto queda antes de repetirlo."
+DOWN = "No puedo consultar el inventario ahora mismo."
+
 MAX_FALLOS = 2  # consecutive answers that did not fill the pending question
 MAX_PREGUNTAS = 4  # questions asked for one order
 MAX_OPCIONES = 20  # candidates kept in the session and sent to HA
@@ -37,6 +55,12 @@ class HAError(Exception):
     def __init__(self, message: str = "", sent: bool = True):
         super().__init__(message)
         self.sent = sent
+
+
+# ---- Logging: names and outcomes only. The event carries an access token; never log it.
+
+def _log(intent: str, slots: list, outcome: str) -> None:
+    logger.info("intent=%s slots=%s outcome=%s", intent, ",".join(sorted(slots)), outcome)
 
 
 # ---- Slots
@@ -250,14 +274,126 @@ def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms: int = 8000
 
 
 def _dispatch(request: dict, state: dict | None, call_ha, fallback_buscar, remaining_ms: int) -> dict:
-    """Call HA and turn its answer (or its failure) into the Alexa response. Failure handling: see transports."""
+    """Call HA and turn its answer (or its failure) into the Alexa response."""
     try:
-        answer = call_ha(request, 4.0)
+        answer = call_ha(request, HA_TIMEOUT)
     except HAError as err:
         return _on_ha_error(err, request, fallback_buscar, remaining_ms)
     return _after_ha(answer, request, state)
 
 
 def _on_ha_error(err: HAError, request: dict, fallback_buscar, remaining_ms: int) -> dict:
-    # Replaced with the real wording and the read-only fallback in the transports step.
-    return speak("No puedo consultar el inventario ahora mismo.")
+    """HA did not answer. A search is answered read-only from InvenTree; a write says honestly what may have happened,
+    and never keeps a pending question."""
+    if request.get("accion") == "buscar":
+        left = remaining_ms / 1000.0 - HA_TIMEOUT - 1.0  # what the 8 s budget has left, minus a 1 s margin
+        try:
+            return speak(fallback_buscar(request, max(0.5, left)))
+        except RuntimeError:
+            return speak(DOWN)
+    return speak(MAYBE_WRITTEN if err.sent else NOT_WRITTEN)
+
+
+# ---- Transports
+
+def _env(name: str) -> str:
+    return os.environ.get(name, "")
+
+
+def ha_call(payload: dict, timeout: float) -> dict:
+    """POST cajonera.voz and return its `service_response`. One request, never retried: a retried POST could write twice."""
+    url = _env("HA_URL").rstrip("/") + "/api/services/cajonera/voz?return_response"
+    try:
+        response = _http.request(
+            "POST",
+            url,
+            body=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": "Bearer " + _env("HA_TOKEN"),
+                "Content-Type": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+            timeout=urllib3.Timeout(connect=2.0, read=timeout),
+            retries=False,
+        )
+    except (urllib3.exceptions.ConnectTimeoutError, urllib3.exceptions.NewConnectionError):
+        raise HAError("connect", sent=False)
+    except urllib3.exceptions.MaxRetryError as err:
+        # Raised for connection-level failures; the request never left unless the reason says it did.
+        reason = getattr(err, "reason", None)
+        raise HAError("connection", sent=isinstance(reason, (urllib3.exceptions.ReadTimeoutError, urllib3.exceptions.ProtocolError)))
+    except urllib3.exceptions.HTTPError:
+        raise HAError("transport", sent=True)
+    if response.status >= 500:
+        raise HAError(f"http {response.status}", sent=True)
+    if response.status >= 400:
+        raise HAError(f"http {response.status}", sent=False)
+    try:
+        envelope = json.loads(response.data.decode("utf-8"))
+        answer = envelope["service_response"]
+        answer["frase"]
+    except (ValueError, KeyError, TypeError):
+        raise HAError("bad envelope", sent=True)
+    return answer
+
+
+def _inventree(path: str, timeout: float) -> dict:
+    headers = {"Authorization": "Token " + _env("INVENTREE_TOKEN"), "Accept": "application/json", "User-Agent": USER_AGENT}
+    if _env("CF_ACCESS_CLIENT_ID") and _env("CF_ACCESS_CLIENT_SECRET"):
+        headers["CF-Access-Client-Id"] = _env("CF_ACCESS_CLIENT_ID")
+        headers["CF-Access-Client-Secret"] = _env("CF_ACCESS_CLIENT_SECRET")
+    try:
+        response = _http.request(
+            "GET", _env("INVENTREE_URL").rstrip("/") + path, headers=headers,
+            timeout=urllib3.Timeout(connect=min(2.0, timeout), read=timeout), retries=False,
+        )
+        if response.status != 200:
+            raise RuntimeError(f"inventree http {response.status}")
+        return json.loads(response.data.decode("utf-8"))
+    except (urllib3.exceptions.HTTPError, ValueError) as err:
+        raise RuntimeError("inventree unreachable") from err
+
+
+def _rows(data) -> list:
+    return data.get("results", []) if isinstance(data, dict) else (data or [])
+
+
+def inventree_readonly(request: dict, timeout: float) -> str:
+    """Answer "where is it" straight from InvenTree, read only, when Home Assistant is down. Lights nothing."""
+    if request.get("pieza_pk") is not None:
+        pks = [request["pieza_pk"]]
+    elif request.get("pieza_pks"):
+        pks = list(request["pieza_pks"])
+    elif request.get("texto"):
+        from urllib.parse import quote
+
+        pks = [p["pk"] for p in _rows(_inventree("/api/part/?active=true&limit=10&search=" + quote(request["texto"]), timeout))]
+    else:
+        pks = []
+    drawers: list = []
+    for pk in pks:
+        for item in _rows(_inventree(f"/api/stock/?part={pk}&location_detail=true&limit=50", timeout)):
+            name = (item.get("location_detail") or {}).get("name")
+            if name and float(item.get("quantity") or 0) > 0 and name not in drawers:
+                drawers.append(name)
+    if not drawers:
+        return "No encuentro nada con ese nombre."
+    where = "Está en el " + drawers[0] + "." if len(drawers) == 1 else "Hay " + " y ".join("en el " + d for d in drawers[:3]) + "."
+    return where + " Ahora no puedo encender el cajón."
+
+
+def lambda_handler(event, context):
+    """AWS entry point."""
+    request = event.get("request", {})
+    intent = (request.get("intent") or {})
+    remaining = context.get_remaining_time_in_millis() if context is not None else 8000
+    try:
+        response = handle_event(event, ha_call, inventree_readonly, remaining_ms=remaining)
+        outcome = "ok"
+    except Exception as err:  # an unexpected bug must still answer Alexa, never go silent
+        # Only the exception TYPE: its message and traceback can carry a URL, a header or a token.
+        logger.error("unexpected error type=%s", type(err).__name__)
+        response = speak("Ha ocurrido un error. Inténtalo de nuevo.")
+        outcome = "error"
+    _log(intent.get("name") or request.get("type", "?"), list((intent.get("slots") or {}).keys()), outcome)
+    return response
