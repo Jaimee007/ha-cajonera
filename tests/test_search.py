@@ -50,7 +50,7 @@ async def test_several_parts_names_first_three():
     stock = [StockItem(9, 5, "", 1, 11), StockItem(10, 6, "", 1, 13), StockItem(11, 7, "", 1, 12),
              StockItem(12, 8, "", 1, 12)]
     r = await search(inv(parts, stock), "tornillo m3", LOCS)
-    assert r.phrase == "Tornillo M3x8 en el B3, Tornillo M3x12 en el B4 y Tornillo M3x20 en el C1."
+    assert r.phrase == "En el B3 está Tornillo M3x8. En el B4 está Tornillo M3x12. En el C1 están Tornillo M3x20 y Tornillo M3x30."
     assert r.addresses == [17, 19, 18]
 
 
@@ -168,3 +168,61 @@ async def test_outside_ignored_when_cabinet_has_stock():
     fake = inv([part], [StockItem(9, 5, "Huevos", 12.0, 77), StockItem(10, 5, "Huevos", 2.0, 11)])
     r = await search_parts_result(fake, [part], LOCS, outside={77: "Nevera"})
     assert r.phrase.startswith("Están en el B3.")
+
+
+# ---- Several parts: say it drawer by drawer ("en el B3 están A, B y C; en el A2 están D")
+
+def three_screws(drawers):
+    """Three parts in the given drawer pks (11 = B3, 12 = C1, 13 = B4)."""
+    parts = [Part(5, "Tornillo M3x8", 0, 1), Part(6, "Tornillo M3x12", 0, 1), Part(7, "Tornillo M4x10", 0, 1)]
+    stock = [StockItem(9 + i, 5 + i, "", 1, drawers[i]) for i in range(3)]
+    return parts, stock
+
+
+async def test_several_parts_in_one_drawer_are_listed_once_for_that_drawer():
+    parts, stock = three_screws([11, 11, 11])
+    r = await search(inv(parts, stock), "tornillo", LOCS)
+    assert r.phrase == "En el B3 están Tornillo M3x8, Tornillo M3x12 y Tornillo M4x10."
+    assert r.addresses == [17]
+
+
+async def test_several_parts_in_two_drawers_are_grouped_by_drawer():
+    parts, stock = three_screws([11, 12, 11])
+    r = await search(inv(parts, stock), "tornillo", LOCS)
+    assert r.phrase == "En el B3 están Tornillo M3x8 y Tornillo M4x10. En el C1 está Tornillo M3x12."
+    assert r.addresses == [17, 18]
+
+
+async def test_one_part_per_drawer_keeps_one_clause_each():
+    parts, stock = three_screws([11, 12, 13])
+    r = await search(inv(parts, stock), "tornillo", LOCS)
+    assert r.phrase == "En el B3 está Tornillo M3x8. En el C1 está Tornillo M3x12. En el B4 está Tornillo M4x10."
+
+
+async def test_a_part_in_two_drawers_appears_in_both():
+    parts = [Part(5, "Tornillo M3x8", 0, 2), Part(6, "Tuerca M3", 0, 1)]
+    stock = [StockItem(9, 5, "", 1, 11), StockItem(10, 5, "", 1, 12), StockItem(11, 6, "", 1, 11)]
+    r = await search(inv(parts, stock), "m3", LOCS)
+    assert r.phrase == "En el B3 están Tornillo M3x8 y Tuerca M3. En el C1 está Tornillo M3x8."
+
+
+async def test_grouped_phrase_names_at_most_three_drawers_and_three_parts_each():
+    locs = {100 + i: Location(100 + i, f"A{i + 1}", i) for i in range(5)}
+    parts = [Part(5 + i, f"Pieza {i}", 0, 1) for i in range(5)]
+    stock = [StockItem(50 + i, 5 + i, "", 1, 100 + i) for i in range(5)]
+    r = await search(FakeInventory(parts, stock, list(locs.values())), "pieza", locs)
+    assert r.phrase.count("En el") == 3 and r.phrase.endswith("Y en 2 cajones más.")
+
+
+async def test_a_drawer_with_more_than_three_parts_says_and_n_more():
+    parts = [Part(5 + i, f"Pieza {i}", 0, 1) for i in range(5)]
+    stock = [StockItem(50 + i, 5 + i, "", 1, 11) for i in range(5)]
+    r = await search(inv(parts, stock), "pieza", LOCS)
+    assert r.phrase == "En el B3 están Pieza 0, Pieza 1, Pieza 2 y 2 más."
+
+
+async def test_unplaced_drawer_is_named_by_its_address_in_the_grouped_phrase():
+    parts = [Part(5, "Tornillo M3", 0, 1), Part(6, "Tuerca M3", 0, 1)]
+    stock = [StockItem(9, 5, "", 1, 11), StockItem(10, 6, "", 1, 14)]
+    r = await search(inv(parts, stock), "m3", LOCS)
+    assert r.phrase == "En el B3 está Tornillo M3. En el cajón 20 está Tuerca M3."

@@ -52,6 +52,27 @@ def _unique(items):
     return seen
 
 
+def _by_drawer_phrase(by_part: list[tuple[Part, list[Hit]]]) -> str:
+    """Several parts answered drawer by drawer: "En el B3 están A, B y C. En el A2 está D."
+
+    A person looks in a drawer, so the drawer comes first and its parts are listed once, however many parts share it.
+    A part that sits in two drawers appears in both. At most three drawers and three parts per drawer are named."""
+    drawers: dict[int, tuple[Location, list[str]]] = {}
+    for part, hits in by_part:
+        for hit in hits:
+            _, names = drawers.setdefault(hit.location.pk, (hit.location, []))
+            if part.name not in names:
+                names.append(part.name)
+    clauses = []
+    for location, names in list(drawers.values())[:3]:
+        shown = names[:3] + ([f"{len(names) - 3} más"] if len(names) > 3 else [])
+        verb = "está" if len(names) == 1 else "están"
+        clauses.append(f"En {_where(location)} {verb} {join_es(shown)}.")
+    if len(drawers) > 3:
+        clauses.append(f"Y en {len(drawers) - 3} cajones más.")
+    return " ".join(clauses)
+
+
 def _low_suffix(part: Part) -> str:
     if not part.is_low:
         return ""
@@ -148,7 +169,7 @@ async def search_parts_result(
         part, hits = by_part[0]
         phrase = _one_part_phrase(part, hits)
     else:
-        phrase = join_es([f"{part.name} en {_where(hits[0].location)}" for part, hits in by_part[:3]]) + "."
+        phrase = _by_drawer_phrase(by_part)
 
     if len(lit) > MAX_LIT:
         phrase += f" Hay {len(lit)} cajones; enciendo los {MAX_LIT} primeros."
