@@ -189,6 +189,13 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def guardar_aqui(call: ServiceCall) -> None:
         cajonera.guardar_aqui(call.data["direccion"])
 
+    async def voz(call: ServiceCall) -> ServiceResponse:
+        d = call.data
+        return await cajonera.voz(
+            d["accion"], d.get("pieza_pk"), d.get("pieza_pks"), d.get("texto"), d.get("cantidad"), d.get("cajon"),
+            bool(d.get("uno", False)),
+        )
+
     async def guardar_apagar(call: ServiceCall) -> None:
         cajonera.guardar_apagar()
 
@@ -330,6 +337,23 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     # The card owns the "store here" light: it lights the drawer it targets and puts it out again.
     hass.services.async_register(DOMAIN, "guardar_aqui", guardar_aqui, schema=vol.Schema({vol.Required("direccion"): ID}))
     hass.services.async_register(DOMAIN, "guardar_apagar", guardar_apagar)
+    hass.services.async_register(
+        DOMAIN,
+        "voz",
+        voz,
+        schema=vol.Schema(
+            {
+                vol.Required("accion"): vol.In(["buscar", "anadir", "retirar", "actualizar"]),
+                vol.Optional("pieza_pk"): vol.Any(None, ID),
+                vol.Optional("pieza_pks"): vol.Any(None, vol.All([ID], vol.Length(max=20))),
+                vol.Optional("texto"): OPTIONAL_TEXT,
+                vol.Optional("cantidad"): QUANTITY,
+                vol.Optional("cajon"): OPTIONAL_TEXT,
+                vol.Optional("uno", default=False): cv.boolean,
+            }
+        ),
+        supports_response=SupportsResponse.ONLY,
+    )
     # The card owns the selection light too: the drawer tapped lights alone for 30 s.
     hass.services.async_register(DOMAIN, "seleccionar", seleccionar, schema=vol.Schema({vol.Required("direccion"): ID}))
     hass.services.async_register(DOMAIN, "seleccion_apagar", seleccion_apagar)

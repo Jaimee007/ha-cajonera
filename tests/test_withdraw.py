@@ -321,3 +321,31 @@ async def test_withdraw_by_part_edge_cases():
     fake.fail = True
     assert (await withdraw_by_part(fake, 5, 1, None, NOW, LOCS)).phrase == "No puedo consultar el inventario ahora mismo."
     assert fake.removed == []
+
+
+async def test_candidate_parts_exact_name_wins():
+    from logic.withdraw import candidate_parts
+
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40), Part(6, "Tornillo M3x80", 0, 10)],
+                         [StockItem(9, 5, "", 40.0, 11), StockItem(10, 6, "", 10.0, 12)], list(LOCS.values()))
+    assert [p.pk for p in await candidate_parts(fake, "tornillo m3x8", LOCS)] == [5]
+
+
+async def test_candidate_parts_prefers_stocked_in_cabinet():
+    from logic.withdraw import candidate_parts
+
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0, 40), Part(6, "Tornillo M3x8 inox", 0, 10)],
+                         [StockItem(9, 5, "", 40.0, 11), StockItem(10, 6, "", 10.0, None)], list(LOCS.values()))
+    assert [p.pk for p in await candidate_parts(fake, "m3x8", LOCS)] == [5]
+
+
+async def test_withdraw_by_part_default_note_is_panel():
+    fake = one_drawer()
+    await withdraw_by_part(fake, 5, 3, None, NOW, LOCS)
+    assert fake.last_notes == "cajonera: panel"
+
+
+async def test_withdraw_by_part_accepts_another_note():
+    fake = one_drawer()
+    await withdraw_by_part(fake, 5, 3, None, NOW, LOCS, notes="cajonera: voz")
+    assert fake.last_notes == "cajonera: voz"

@@ -269,6 +269,10 @@ class InvenTreeClient:
             out.append(Location(d["pk"], d["name"], address))
         return out
 
+    async def get_location(self, pk: int) -> Location:
+        data = await self._request("GET", f"/api/stock/location/{pk}/")
+        return Location(data["pk"], data["name"], None)
+
     async def create_location(self, parent_pk: int, name: str, address: int) -> Location:
         created = await self._request("POST", "/api/stock/location/", json={"name": name, "parent": parent_pk})
         await self.set_location_address(created["pk"], address)

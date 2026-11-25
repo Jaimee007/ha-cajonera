@@ -305,6 +305,40 @@
           "description": "New minimum stock."
         }
       }
+    },
+    "voz": {
+      "name": "Voice order",
+      "description": "A spoken order (search, add, withdraw or count) with the same rules as the card. Answers with a sentence and, when something is missing, a question.",
+      "fields": {
+        "accion": {
+          "name": "Action",
+          "description": "buscar, anadir, retirar or actualizar."
+        },
+        "pieza_pk": {
+          "name": "Part",
+          "description": "InvenTree part id."
+        },
+        "pieza_pks": {
+          "name": "Candidate parts",
+          "description": "Parts that share a keyword (at most 20)."
+        },
+        "texto": {
+          "name": "Text",
+          "description": "The spoken name, when no id is known."
+        },
+        "cantidad": {
+          "name": "Quantity",
+          "description": "Units. One is never assumed."
+        },
+        "cajon": {
+          "name": "Drawer",
+          "description": "Drawer name, for example B3."
+        },
+        "uno": {
+          "name": "One",
+          "description": "The user said un or una: the quantity is 1."
+        }
+      }
     }
   }
 }

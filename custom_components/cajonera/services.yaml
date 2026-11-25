@@ -357,3 +357,43 @@ pieza_editar:
           max: 100000
           step: any
           mode: box
+
+voz:
+  fields:
+    accion:
+      required: true
+      example: retirar
+      selector:
+        select:
+          options: [buscar, anadir, retirar, actualizar]
+    pieza_pk:
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 100000000
+          mode: box
+    pieza_pks:
+      example: "[5, 6]"
+      selector:
+        object:
+    texto:
+      example: "huevos"
+      selector:
+        text:
+    cantidad:
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    cajon:
+      example: B1
+      selector:
+        text:
+    uno:
+      example: false
+      selector:
+        boolean:

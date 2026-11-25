@@ -104,8 +104,19 @@ async def search(api, text: str, locations: dict[int, Location]) -> SearchResult
         return SearchResult("¿Qué quieres buscar?")
     try:
         parts = await api.search_parts(text)
-        if not parts:
-            return SearchResult(NO_MATCH_PHRASE)
+    except InvenTreeError:
+        return SearchResult(DOWN_PHRASE)
+    return await search_parts_result(api, parts, locations)
+
+
+async def search_parts_result(
+    api, parts: list[Part], locations: dict[int, Location], outside: dict[int, str] | None = None
+) -> SearchResult:
+    """Say where the given parts are. `outside` maps InvenTree location pk -> name for stock that is not in a
+    cabinet drawer: when no part has stock in a drawer, the answer names those places instead."""
+    if not parts:
+        return SearchResult(NO_MATCH_PHRASE)
+    try:
         stocks = await asyncio.gather(*(api.stock_for_part(p.pk) for p in parts))
     except InvenTreeError:
         return SearchResult(DOWN_PHRASE)
@@ -118,6 +129,16 @@ async def search(api, text: str, locations: dict[int, Location]) -> SearchResult
 
     if not by_part:
         first = parts[0]
+        if outside:
+            places = []
+            for items in stocks:
+                for s in items:
+                    name = outside.get(s.location_pk)
+                    if name and name not in places:
+                        places.append(name)
+            if places:
+                total = sum(p.total_stock for p in parts)
+                return SearchResult(f"Está en {join_es(places)}. Quedan {fmt_qty(total)}.")
         return SearchResult(f"Hay {fmt_qty(first.total_stock)} de {first.name}, pero no está en ningún cajón.")
 
     all_hits = [h for _, hits in by_part for h in hits]

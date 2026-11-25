@@ -117,24 +117,30 @@ async def _remove(
     return WithdrawResult(phrase + ".", done=True, address=address, low=part.is_low, context=context)
 
 
-async def _resolve_part(api, text: str, locations: dict[int, Location]) -> tuple[Part | None, str | None]:
-    """The single part the text means, or a phrase explaining why there isn't one."""
+async def candidate_parts(api, text: str, locations: dict[int, Location]) -> list[Part]:
+    """The parts a spoken or typed name can mean, narrowed the way a person would.
+
+    An exact (case-insensitive) name wins on its own; otherwise only the parts that sit in a cabinet drawer
+    count, so a look-alike that is in no drawer never makes a clear request ambiguous; if none is stocked,
+    every match is returned.
+    """
     parts = await api.search_parts(text)
-    if not parts:
-        return None, NO_MATCH_PHRASE
     exact = [p for p in parts if p.name.casefold() == text.casefold()]
     if len(exact) == 1:
-        return exact[0], None
+        return exact
     if len(parts) > 1:
-        # Drop parts that are in no drawer, as search does, before calling it ambiguous.
-        stocked = []
-        for p in parts:
-            if _by_drawer(await api.stock_for_part(p.pk), locations):
-                stocked.append(p)
-        if len(stocked) == 1:
-            return stocked[0], None
-        if len(stocked) > 1:
-            return None, f"Hay varias piezas con ese nombre: {join_es([p.name for p in stocked[:3]])}. ¿Cuál?"
+        stocked = [p for p in parts if _by_drawer(await api.stock_for_part(p.pk), locations)]
+        if stocked:
+            return stocked
+    return parts
+
+
+async def _resolve_part(api, text: str, locations: dict[int, Location]) -> tuple[Part | None, str | None]:
+    """The single part the text means, or a phrase explaining why there isn't one."""
+    parts = await candidate_parts(api, text, locations)
+    if not parts:
+        return None, NO_MATCH_PHRASE
+    if len(parts) > 1:
         return None, f"Hay varias piezas con ese nombre: {join_es([p.name for p in parts[:3]])}. ¿Cuál?"
     return parts[0], None
 
@@ -194,8 +200,11 @@ async def withdraw_by_part(
     drawer: str | None,
     now: datetime,
     locations: dict[int, Location],
+    notes: str = "cajonera: panel",
 ) -> WithdrawResult:
-    """Panel withdrawal of a known part: no name resolution, same drawer rules as the voice route."""
+    """Withdrawal of a known part: no name resolution, same drawer rules as the voice route.
+
+    `notes` is what InvenTree's stock history records ("cajonera: panel" or "cajonera: voz")."""
     if _bad_quantity(quantity):
         return WithdrawResult(ASK_QTY)
     drawer = (drawer or "").strip()
@@ -214,7 +223,7 @@ async def withdraw_by_part(
             chosen = next(iter(drawers))
         else:
             return WithdrawResult(f"Hay {where_all}, ¿de cuál?")
-        return await _remove(api, part, locations[chosen], drawers[chosen], quantity, now, locations, "cajonera: panel")
+        return await _remove(api, part, locations[chosen], drawers[chosen], quantity, now, locations, notes)
     except InvenTreeError:
         return WithdrawResult(DOWN_PHRASE)
 
