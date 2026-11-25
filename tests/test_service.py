@@ -609,3 +609,95 @@ async def test_seleccion_apagar_clears_only_the_selection():
     await caj.buscar("m3")
     caj.seleccion_apagar()  # a search in progress is not ours to clear
     assert _modes(caj) == {0: "buscado", 17: "reposo"}
+
+
+# ---- cajonera.voz (voice bridge)
+
+def huevos_cab(qty=12, minimum=10):
+    # the first sync creates A1 (pk 1001) and B1 (pk 1002); the stock sits in B1
+    return FakeInventory([Part(5, "Huevos", minimum, float(qty))], [StockItem(9, 5, "Huevos", float(qty), 1002)], [])
+
+
+def state_of(caj, address):
+    return next(s for s in caj.simulator.states() if s.drawer.address == address)
+
+
+async def test_voz_buscar_lights_drawers_and_sets_context():
+    caj = make(huevos_cab())
+    r = await caj.voz("buscar", pieza_pk=5)
+    assert r == {"frase": "Están en el B1. Quedan 12.", "hecho": False, "pregunta": None}
+    assert state_of(caj, 17).mode == "buscado"
+    assert caj.context == Context(5, 1002, NOW)
+
+
+async def test_voz_asks_cajon_and_lights_candidates():
+    fake = FakeInventory([Part(5, "Huevos", 0.0, 12.0)], [StockItem(9, 5, "", 7.0, 1001), StockItem(10, 5, "", 5.0, 1002)], [])
+    caj = make(fake)
+    r = await caj.voz("anadir", pieza_pk=5, cantidad=2)
+    assert r["pregunta"] == {"falta": "cajon", "pieza_pk": 5, "opciones": ["A1", "B1"]}
+    assert r["hecho"] is False
+    assert state_of(caj, 0).mode == "buscado" and state_of(caj, 17).mode == "buscado"
+    assert fake.added == []
+
+
+async def test_voz_write_confirms_on_the_drawer():
+    fake = huevos_cab(12)
+    caj = make(fake)
+    r = await caj.voz("retirar", pieza_pk=5, cantidad=2)
+    assert r["frase"] == "Hecho. He retirado 2 de Huevos del B1. Quedan 10." and r["hecho"] is True
+    assert state_of(caj, 17).mode == "confirmar_ok"
+    assert caj.context == Context(5, 1002, NOW)
+    assert fake.last_notes == "cajonera: voz"
+
+
+async def test_voz_question_leaves_everything_unchanged():
+    fake = huevos_cab()
+    caj = make(fake)
+    r = await caj.voz("anadir", pieza_pk=5)
+    assert r["pregunta"] == {"falta": "cantidad", "pieza_pk": 5, "opciones": []}
+    assert all(s.mode == "reposo" for s in caj.simulator.states())
+    assert caj.context is None and fake.added == []
+
+
+async def test_voz_write_timeout_says_maybe_registered():
+    fake = huevos_cab()
+    caj = make(fake, deadline=0.2)
+    await caj.sync()
+    orig = fake.remove_stock
+
+    async def slow_remove(*a):
+        await asyncio.sleep(0.5)
+        await orig(*a)
+
+    fake.remove_stock = slow_remove
+    r = await caj.voz("retirar", pieza_pk=5, cantidad=2)
+    assert r["frase"].startswith("No sé si se ha registrado") and r["hecho"] is False and r["pregunta"] is None
+
+
+async def test_voz_buscar_timeout_says_down():
+    fake = huevos_cab()
+    caj = make(fake, deadline=0.2)
+    await caj.sync()
+    fake.delay = 0.5
+    r = await caj.voz("buscar", pieza_pk=5)
+    assert r == {"frase": "No puedo consultar el inventario ahora mismo.", "hecho": False, "pregunta": None}
+
+
+async def test_voz_down_when_inventree_down():
+    fake = huevos_cab()
+    fake.fail = True
+    r = await make(fake).voz("buscar", pieza_pk=5)
+    assert r == {"frase": "No puedo consultar el inventario ahora mismo.", "hecho": False, "pregunta": None}
+
+
+async def test_voz_response_shape():
+    r = await make(huevos_cab()).voz("buscar", pieza_pk=5)
+    assert set(r) == {"frase", "hecho", "pregunta"}
+
+
+async def test_voz_refreshes_low_stock_after_a_write():
+    fake = huevos_cab(12, minimum=10)
+    caj = make(fake)
+    await caj.voz("retirar", pieza_pk=5, cantidad=5)
+    await caj.drain()
+    assert [lp.part.name for lp in caj.low.parts] == ["Huevos"]

@@ -30,6 +30,7 @@ from .search import DOWN_PHRASE, MAX_LIT, drawer_contents, search
 from .simulator import DrawerSimulator
 from .stock_ops import INVALID_QTY, MAYBE_STOCK, OpResult, add_to_drawer, count_drawer, move_between
 from .sync import apply_sync, plan_sync
+from .voice import VoiceResult, voz as voice_order
 from .withdraw import ASK_QTY, MAYBE_DONE, Context, withdraw_by_part, withdraw_by_stock, withdraw_by_text
 
 _LOGGER = logging.getLogger(__name__)
@@ -380,6 +381,48 @@ class Cajonera:
         if with_part_pk:
             answer["pieza_pk"] = result.part_pk
         return answer
+
+    async def voz(
+        self,
+        accion: str,
+        pieza_pk: int | None = None,
+        pieza_pks: list[int] | None = None,
+        texto: str | None = None,
+        cantidad: float | None = None,
+        cajon: str | None = None,
+        uno: bool = False,
+    ) -> dict:
+        """One spoken order from the Alexa bridge: the card's rules, answered as a sentence (and maybe a question)."""
+        down = {"frase": DOWN_PHRASE, "hecho": False, "pregunta": None}
+        # Past the deadline a write may already be in flight: never say it failed.
+        timeout = down if accion == "buscar" else {"frase": MAYBE_STOCK, "hecho": False, "pregunta": None}
+        return await self._bounded(
+            self._voz(accion, pieza_pk, pieza_pks, texto, cantidad, cajon, uno, down), timeout
+        )
+
+    async def _voz(self, accion, pieza_pk, pieza_pks, texto, cantidad, cajon, uno, down) -> dict:
+        if not await self._ready():
+            return down
+        result: VoiceResult = await voice_order(
+            self.api, self.locations, self.context, self.now(), accion=accion, pieza_pk=pieza_pk,
+            pieza_pks=pieza_pks, texto=texto, cantidad=cantidad, cajon=cajon, uno=uno,
+        )
+        if result.iluminar:
+            self.simulator.search(result.iluminar, set(result.bajos) & set(result.iluminar))
+        if result.confirmar is not None:
+            self.simulator.confirm(*result.confirmar)
+        if result.contexto is not None:
+            self.context = result.contexto
+        if result.refrescar_bajo:
+            self._spawn(self.refresh_low())
+        pregunta = None
+        if result.pregunta is not None:
+            pregunta = {
+                "falta": result.pregunta.falta,
+                "pieza_pk": result.pregunta.pieza_pk,
+                "opciones": result.pregunta.opciones,
+            }
+        return {"frase": result.frase, "hecho": result.hecho, "pregunta": pregunta}
 
     async def categorias(self) -> dict:
         return await self._bounded(self._categorias(), {"categorias": []})

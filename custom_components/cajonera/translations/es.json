@@ -305,6 +305,40 @@
           "description": "Nuevas existencias mínimas."
         }
       }
+    },
+    "voz": {
+      "name": "Orden de voz",
+      "description": "Una orden hablada (buscar, añadir, retirar o actualizar) con las mismas reglas que la tarjeta. Responde con una frase y, si falta algo, con una pregunta.",
+      "fields": {
+        "accion": {
+          "name": "Acción",
+          "description": "buscar, anadir, retirar o actualizar."
+        },
+        "pieza_pk": {
+          "name": "Pieza",
+          "description": "Identificador de la pieza en InvenTree."
+        },
+        "pieza_pks": {
+          "name": "Piezas candidatas",
+          "description": "Piezas que comparten una palabra clave (máximo 20)."
+        },
+        "texto": {
+          "name": "Texto",
+          "description": "Nombre dicho, si no se conoce el identificador."
+        },
+        "cantidad": {
+          "name": "Cantidad",
+          "description": "Unidades. Nunca se supone una."
+        },
+        "cajon": {
+          "name": "Cajón",
+          "description": "Nombre del cajón, por ejemplo B3."
+        },
+        "uno": {
+          "name": "Uno",
+          "description": "El usuario dijo «un» o «una»: la cantidad es 1."
+        }
+      }
     }
   }
 }
