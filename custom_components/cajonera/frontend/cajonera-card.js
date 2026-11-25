@@ -9,8 +9,12 @@
 // to a dashboard with
 //   type: custom:cajonera-card
 
-import { createSequencer, debounceMs, defaultDrawer, fmtQty, litFromRows, minChars, parseQty, suggestionRows } from "./cajonera-layout.js";
-import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods, withdrawKey } from "./cajonera-views.js";
+// Sibling modules are imported dynamically with this module's own query string
+// (the integration serves `cajonera-card.js?v=<version>`), so a release can never
+// mix a new card with cached views or layout. Empty when loaded without a query.
+const V = new URL(import.meta.url).search;
+const { createSequencer, debounceMs, defaultDrawer, fmtQty, litFromRows, minChars, parseQty, suggestionRows } = await import(`./cajonera-layout.js${V}`);
+const { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods, withdrawKey } = await import(`./cajonera-views.js${V}`);
 
 const litKey = (lit) => `${lit.direcciones.join(",")}|${lit.bajos.join(",")}`;
 const BAD_QTY = "Dime una cantidad válida.";

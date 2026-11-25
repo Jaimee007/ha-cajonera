@@ -2,7 +2,9 @@
 // every screen. The methods below are mixed into the card's prototype, so `this`
 // is the card; they only read its state and never call services.
 
-import { fmtQty, gridCells, rowLabel } from "./cajonera-layout.js";
+// Same version query as the entry module (see cajonera-card.js): one instance of layout.
+const V = new URL(import.meta.url).search;
+const { fmtQty, gridCells, rowLabel } = await import(`./cajonera-layout.js${V}`);
 
 export const MAP = "sensor.cajonera_mapa";
 export const LOW = "sensor.cajonera_existencias_bajas";
