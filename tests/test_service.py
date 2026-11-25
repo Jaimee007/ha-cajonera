@@ -566,3 +566,46 @@ async def test_reads_refresh_low_at_most_one_at_a_time():
     await caj.contenido(17)  # nothing in flight any more: a new one may start
     await caj.drain()
     assert len(calls) == 2
+
+
+async def test_seleccionar_lights_only_the_tapped_drawer():
+    caj = make(stocked())
+    await caj.sync()
+    await caj.buscar("m3")
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
+    caj.seleccionar(17)
+    assert _modes(caj) == {0: "reposo", 17: "seleccionado"}
+    caj.seleccionar(0)
+    assert _modes(caj) == {0: "seleccionado", 17: "reposo"}
+
+
+async def test_seleccionar_unknown_address_is_ignored():
+    caj = make(stocked())
+    await caj.sync()
+    caj.seleccionar(17)
+    caj.seleccionar(30)
+    assert _modes(caj) == {0: "reposo", 17: "seleccionado"}
+
+
+async def test_seleccionar_does_not_touch_the_context():
+    caj = make(stocked())
+    await caj.sync()
+    await caj.buscar("m3")
+    before = caj.context
+    assert before is not None
+    caj.seleccionar(17)
+    assert caj.context == before
+    caj.seleccion_apagar()
+    assert caj.context == before
+
+
+async def test_seleccion_apagar_clears_only_the_selection():
+    caj = make(stocked())
+    await caj.sync()
+    caj.seleccion_apagar()  # nothing lit: no-op
+    caj.seleccionar(17)
+    caj.seleccion_apagar()
+    assert set(_modes(caj).values()) == {"reposo"}
+    await caj.buscar("m3")
+    caj.seleccion_apagar()  # a search in progress is not ours to clear
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}

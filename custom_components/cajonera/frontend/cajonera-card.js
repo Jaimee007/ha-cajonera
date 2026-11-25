@@ -41,6 +41,7 @@ class CajoneraCard extends HTMLElement {
     this._hi = -1; // highlighted suggestion
     this._litBySuggest = false; // the cabinet shows drawers lit by the suggestions (iluminar_busqueda)
     this._lastLit = null; // { direcciones, bajos } last sent by the suggestions; meaningful while _litBySuggest
+    this._selLit = false; // the cabinet shows the drawer tapped on the grid (seleccionar), cyan for 30 s
     this._results = null; // { frase, resultados } from inventario_buscar
     this._selected = null; // drawer address whose contents are shown
     this._contents = null; // { cajon, piezas }
@@ -200,9 +201,13 @@ class CajoneraCard extends HTMLElement {
 
   // Send a lit set unless the cabinet already shows exactly that.
   _sendLit(lit) {
-    if (!lit.direcciones.length) return this._clearSuggestLight();
+    if (!lit.direcciones.length) {
+      this._dropSelection(); // the answer has nothing to light: the tapped drawer must not stay lit alone
+      return this._clearSuggestLight();
+    }
     if (this._litBySuggest && this._lastLit && litKey(this._lastLit) === litKey(lit)) return;
     this._litBySuggest = true;
+    this._selLit = false; // iluminar_busqueda replaces the selection light
     this._lastLit = lit;
     this._callNoResponse("iluminar_busqueda", { direcciones: lit.direcciones, bajos: lit.bajos });
   }
@@ -214,6 +219,14 @@ class CajoneraCard extends HTMLElement {
     this._litBySuggest = false;
     this._lastLit = null;
     this._callNoResponse("iluminar_busqueda", { direcciones: [], bajos: [] });
+  }
+
+  // Put the tapped drawer's light out, but only if it is lit: the calls that relight (pieza,
+  // inventario_buscar, iluminar_busqueda, guardar_aqui) replace it by themselves.
+  _dropSelection() {
+    if (!this._selLit) return;
+    this._selLit = false;
+    this._callNoResponse("seleccion_apagar");
   }
 
   _closeSuggestions() {
@@ -269,6 +282,9 @@ class CajoneraCard extends HTMLElement {
     this._litBySuggest = false; // inventario_buscar lights the drawers by itself
     const res = await this._call("inventario_buscar", { texto, origen: "panel" }, "buscar");
     if (!res) return;
+    // Hits relight the cabinet; a search that finds nothing lights nothing, so the tapped drawer is put out.
+    if (res.resultados?.length) this._selLit = false;
+    else this._dropSelection();
     this._results = res;
     this._toast(res.frase);
     this._render();
@@ -289,7 +305,13 @@ class CajoneraCard extends HTMLElement {
 
   async _openDrawer(address, identify = true) {
     this._selected = address;
-    if (identify) this._callNoResponse("identificar", { direccion: address });
+    if (identify) {
+      // One light at a time: the tapped drawer alone, for 30 s. It replaces the suggestion and search lights.
+      this._litBySuggest = false;
+      this._lastLit = null;
+      this._selLit = true;
+      this._callNoResponse("seleccionar", { direccion: address });
+    }
     const res = await this._call("contenido_cajon", { direccion: address });
     this._contents = res;
     this._render();
@@ -351,6 +373,7 @@ class CajoneraCard extends HTMLElement {
     this._leaveCreate();
     this._closeSuggestions();
     this._litBySuggest = false; // pieza lit the part's drawers by itself
+    this._selLit = false;
     this._sheet = sheet;
     this._screen = "ficha";
     const d = defaultDrawer(sheet.cajones);
@@ -492,6 +515,7 @@ class CajoneraCard extends HTMLElement {
   _startCreate(nombre) {
     this._closeSuggestions();
     this._clearSuggestLight();
+    this._dropSelection(); // the create screen lights magenta by itself once a drawer is targeted
     this._catSeq.next(); // a late answer from an earlier create form must not land on this one
     this._screen = "crear";
     Object.assign(this._form, {

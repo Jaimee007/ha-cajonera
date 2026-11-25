@@ -253,6 +253,19 @@ guardar_aqui:
 
 guardar_apagar:
 
+seleccionar:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+
+seleccion_apagar:
+
 pieza_crear:
   fields:
     nombre:

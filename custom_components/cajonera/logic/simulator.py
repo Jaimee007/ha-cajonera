@@ -24,6 +24,7 @@ COLORS = {
     "abierto": (255, 255, 255),
     "identificar": (255, 0, 255),
     "guardar": (255, 0, 255),  # "store it here": the drawer to put something into
+    "seleccionado": (0, 200, 255),  # the drawer tapped on the card: cyan, apart from blue/magenta/orange
 }
 
 
@@ -40,7 +41,7 @@ class _Slot:
     def __init__(self, drawer: Drawer):
         self.drawer = drawer
         self.open = False
-        self.base = "reposo"  # order layer: reposo / buscado / buscado_bajo / guardar
+        self.base = "reposo"  # order layer: reposo / buscado / buscado_bajo / guardar / seleccionado
         self.overlay: str | None = None  # short-lived: encontrado, confirmar_*, identificar
         self.overlay_timer: asyncio.TimerHandle | None = None
 
@@ -61,6 +62,7 @@ class DrawerSimulator:
         found_seconds: float = 2,
         flash_seconds: float = 1,
         identify_seconds: float = 3,
+        select_seconds: float = 30,
     ):
         self._drawers = list(drawers)
         self._slots = {d.address: _Slot(d) for d in drawers}
@@ -68,8 +70,10 @@ class DrawerSimulator:
         self._found_seconds = found_seconds
         self._flash_seconds = flash_seconds
         self._identify_seconds = identify_seconds
+        self._select_seconds = select_seconds
         self._search_timer: asyncio.TimerHandle | None = None
         self._store_timer: asyncio.TimerHandle | None = None
+        self._select_timer: asyncio.TimerHandle | None = None
         self._listeners: list[Callable[[], None]] = []
 
     # Reading
@@ -91,9 +95,10 @@ class DrawerSimulator:
     # Orders
 
     def search(self, addresses: list[int], low: set[int]) -> None:
-        """Start a search, replacing any search (or store-here) in progress."""
+        """Start a search, replacing any search, store-here or selection in progress."""
         self._cancel_search_timer()
         self._cancel_store_timer()
+        self._cancel_select_timer()
         for address, slot in self._slots.items():
             if address in addresses:
                 slot.base = "buscado_bajo" if address in low else "buscado"
@@ -104,9 +109,10 @@ class DrawerSimulator:
         self._notify()
 
     def store_here(self, address: int, seconds: float = 30) -> None:
-        """Light one drawer to say "put it here", replacing any search or earlier store-here."""
+        """Light one drawer to say "put it here", replacing any search, selection or earlier store-here."""
         self._cancel_search_timer()
         self._cancel_store_timer()
+        self._cancel_select_timer()
         known = address in self._slots
         for a, slot in self._slots.items():
             slot.base = "guardar" if a == address else "reposo"
@@ -119,6 +125,27 @@ class DrawerSimulator:
         if any(slot.base == "guardar" for slot in self._slots.values()):
             self._end_store()
 
+    def select(self, address: int) -> None:
+        """Light only the drawer tapped on the card; every other order light goes out.
+
+        One selection at a time, in the same order layer as searches. It lasts `select_seconds`; selecting
+        the same drawer again renews it, another drawer moves it.
+        """
+        self._cancel_search_timer()
+        self._cancel_store_timer()
+        self._cancel_select_timer()
+        known = address in self._slots
+        for a, slot in self._slots.items():
+            slot.base = "seleccionado" if a == address else "reposo"
+        if known:
+            self._select_timer = asyncio.get_running_loop().call_later(self._select_seconds, self._end_select)
+        self._notify()
+
+    def clear_selection(self) -> None:
+        """Put out the selection light. A search or store-here in progress is not touched."""
+        if any(slot.base == "seleccionado" for slot in self._slots.values()):
+            self._end_select()
+
     def confirm(self, address: int, low: bool) -> None:
         self._overlay(address, "confirmar_bajo" if low else "confirmar_ok", self._flash_seconds)
 
@@ -130,7 +157,10 @@ class DrawerSimulator:
         if slot is None or slot.open == is_open:
             return
         slot.open = is_open
-        if is_open and slot.base == "guardar":
+        if is_open and slot.base == "seleccionado":
+            # Opened after tapping it: white, and the selection has done its job.
+            self._end_select(notify=False)
+        elif is_open and slot.base == "guardar":
             # Opened to put something in: no green, nothing was being searched.
             self._end_store(notify=False)
         elif is_open and slot.base != "reposo":
@@ -175,6 +205,19 @@ class DrawerSimulator:
             self._store_timer.cancel()
             self._store_timer = None
 
+    def _cancel_select_timer(self) -> None:
+        if self._select_timer:
+            self._select_timer.cancel()
+            self._select_timer = None
+
+    def _end_select(self, notify: bool = True) -> None:
+        self._cancel_select_timer()
+        for slot in self._slots.values():
+            if slot.base == "seleccionado":
+                slot.base = "reposo"
+        if notify:
+            self._notify()
+
     def _end_store(self, notify: bool = True) -> None:
         self._cancel_store_timer()
         for slot in self._slots.values():
@@ -185,6 +228,7 @@ class DrawerSimulator:
 
     def _end_search(self, notify: bool = True) -> None:
         self._cancel_search_timer()
+        self._cancel_select_timer()
         for slot in self._slots.values():
             slot.base = "reposo"
         if notify:

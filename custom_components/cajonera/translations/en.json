@@ -220,6 +220,20 @@
       "name": "Stop store here",
       "description": "Puts out the magenta store-here light. A search in progress is left alone."
     },
+    "seleccionar": {
+      "name": "Select drawer",
+      "description": "Lights in cyan only the drawer tapped on the panel for 30 s and puts every other order light out.",
+      "fields": {
+        "direccion": {
+          "name": "Address",
+          "description": "Drawer address (0 = base)."
+        }
+      }
+    },
+    "seleccion_apagar": {
+      "name": "Stop selection",
+      "description": "Puts out the cyan light of the selected drawer. A search or store-here in progress is left alone."
+    },
     "pieza_crear": {
       "name": "Create part",
       "description": "Creates a part with its initial quantity in a drawer.",

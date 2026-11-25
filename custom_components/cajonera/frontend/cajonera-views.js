@@ -109,6 +109,7 @@ export const STYLE = `
   .cell.buscado .lamp, .cell.buscado_bajo .lamp { animation: blink 1s steps(2, start) infinite; }
   .cell.buscado_bajo .lamp { animation-name: alt; }
   .cell.guardar .lamp { animation: breathe 2.5s ease-in-out infinite; }
+  .cell.seleccionado .lamp { opacity: .8; box-shadow: inset 0 0 14px 2px rgba(255, 255, 255, .55); } /* steady glow, no blink */
   @keyframes blink { 50% { opacity: .1; } }
   @keyframes alt { 0%, 49% { background: rgb(0, 0, 255); } 50%, 100% { background: rgb(255, 120, 0); } }
   @keyframes breathe { 0%, 100% { opacity: .15; } 50% { opacity: .8; } }

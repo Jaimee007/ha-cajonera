@@ -411,3 +411,13 @@ class Cajonera:
     def guardar_apagar(self) -> None:
         """Put out the "store it here" light; a search in progress is left alone."""
         self.simulator.clear_store()
+
+    def seleccionar(self, direccion: int) -> None:
+        """Light only the drawer tapped on the card (30 s); every other order light goes out."""
+        # An unknown address is ignored: lighting nothing must not end a search in progress.
+        if any(d.address == direccion for d in self.simulator.drawers()):
+            self.simulator.select(direccion)
+
+    def seleccion_apagar(self) -> None:
+        """Put out the selection light; a search or store-here in progress is left alone."""
+        self.simulator.clear_selection()

@@ -220,6 +220,20 @@
       "name": "Apagar guardar aquí",
       "description": "Apaga la luz magenta de guardar una pieza. No toca una búsqueda en curso."
     },
+    "seleccionar": {
+      "name": "Seleccionar cajón",
+      "description": "Enciende en cian solo el cajón tocado en el panel durante 30 s y apaga las demás luces de órdenes.",
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
+    },
+    "seleccion_apagar": {
+      "name": "Apagar selección",
+      "description": "Apaga la luz cian del cajón seleccionado. No toca una búsqueda ni un guardar aquí en curso."
+    },
     "pieza_crear": {
       "name": "Crear pieza",
       "description": "Crea una pieza con su cantidad inicial en un cajón.",

@@ -192,6 +192,12 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     async def guardar_apagar(call: ServiceCall) -> None:
         cajonera.guardar_apagar()
 
+    async def seleccionar(call: ServiceCall) -> None:
+        cajonera.seleccionar(call.data["direccion"])
+
+    async def seleccion_apagar(call: ServiceCall) -> None:
+        cajonera.seleccion_apagar()
+
     async def pieza_crear(call: ServiceCall) -> ServiceResponse:
         return await cajonera.pieza_crear(
             call.data.get("nombre"),
@@ -324,6 +330,9 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
     # The card owns the "store here" light: it lights the drawer it targets and puts it out again.
     hass.services.async_register(DOMAIN, "guardar_aqui", guardar_aqui, schema=vol.Schema({vol.Required("direccion"): ID}))
     hass.services.async_register(DOMAIN, "guardar_apagar", guardar_apagar)
+    # The card owns the selection light too: the drawer tapped lights alone for 30 s.
+    hass.services.async_register(DOMAIN, "seleccionar", seleccionar, schema=vol.Schema({vol.Required("direccion"): ID}))
+    hass.services.async_register(DOMAIN, "seleccion_apagar", seleccion_apagar)
     hass.services.async_register(
         DOMAIN,
         "pieza_crear",
