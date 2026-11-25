@@ -9,9 +9,10 @@
 // to a dashboard with
 //   type: custom:cajonera-card
 
-import { createSequencer, debounceMs, defaultDrawer, fmtQty, minChars, parseQty, suggestionRows } from "./cajonera-layout.js";
+import { createSequencer, debounceMs, defaultDrawer, fmtQty, litFromRows, minChars, parseQty, suggestionRows } from "./cajonera-layout.js";
 import { LOW, MAP, NEW_CATEGORY, STYLE, byName, esc, viewMethods } from "./cajonera-views.js";
 
+const litKey = (lit) => `${lit.direcciones.join(",")}|${lit.bajos.join(",")}`;
 const BAD_QTY = "Dime una cantidad válida.";
 // Services that change InvenTree: when the call itself fails we cannot tell whether it was applied.
 const WRITES = new Set([
@@ -39,6 +40,7 @@ class CajoneraCard extends HTMLElement {
     this._sugs = []; // rows from suggestionRows()
     this._hi = -1; // highlighted suggestion
     this._litBySuggest = false; // the cabinet shows drawers lit by the suggestions (iluminar_busqueda)
+    this._lastLit = null; // { direcciones, bajos } last sent by the suggestions; meaningful while _litBySuggest
     this._results = null; // { frase, resultados } from inventario_buscar
     this._selected = null; // drawer address whose contents are shown
     this._contents = null; // { cajon, piezas }
@@ -165,6 +167,7 @@ class CajoneraCard extends HTMLElement {
       }
       return;
     }
+    this._pruneLights(value); // do not wait for the answer to put out what the new text rules out
     this._timer = setTimeout(() => this._suggest(value.trim()), debounceMs);
   }
 
@@ -181,12 +184,27 @@ class CajoneraCard extends HTMLElement {
   // The drawers of the suggestions on screen light up while typing. The card lights them itself, and only
   // when it accepts an answer, so a late answer can never light drawers for text the user moved on from.
   _lightSuggestions() {
-    const rows = this._sugs.filter((r) => !r.crear);
-    const direcciones = [...new Set(rows.flatMap((r) => r.direcciones ?? []))];
-    const bajos = [...new Set(rows.filter((r) => r.bajo).flatMap((r) => r.direcciones ?? []))];
-    if (!direcciones.length) return this._clearSuggestLight();
+    this._sendLit(litFromRows(this._sugs, ""));
+  }
+
+  // Instant local pruning: between a keystroke and the server's answer, put out the drawers whose rows no
+  // longer contain the typed text. It never lights anything new: the result is cut down to what is lit now,
+  // and the answer reconciles later (it may relight what matched by keywords or description).
+  _pruneLights(text) {
+    if (!this._litBySuggest || !this._lastLit) return;
+    const keep = litFromRows(this._sugs, text);
+    const now = new Set(this._lastLit.direcciones);
+    const direcciones = keep.direcciones.filter((a) => now.has(a));
+    this._sendLit({ direcciones, bajos: keep.bajos.filter((a) => direcciones.includes(a)) });
+  }
+
+  // Send a lit set unless the cabinet already shows exactly that.
+  _sendLit(lit) {
+    if (!lit.direcciones.length) return this._clearSuggestLight();
+    if (this._litBySuggest && this._lastLit && litKey(this._lastLit) === litKey(lit)) return;
     this._litBySuggest = true;
-    this._callNoResponse("iluminar_busqueda", { direcciones, bajos });
+    this._lastLit = lit;
+    this._callNoResponse("iluminar_busqueda", { direcciones: lit.direcciones, bajos: lit.bajos });
   }
 
   // Put the suggestion lights out, but only if they are lit: opening a sheet or running the full search
@@ -194,6 +212,7 @@ class CajoneraCard extends HTMLElement {
   _clearSuggestLight() {
     if (!this._litBySuggest) return;
     this._litBySuggest = false;
+    this._lastLit = null;
     this._callNoResponse("iluminar_busqueda", { direcciones: [], bajos: [] });
   }
 

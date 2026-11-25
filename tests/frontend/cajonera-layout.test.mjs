@@ -7,6 +7,7 @@ import {
   createSequencer,
   fmtQty,
   gridCells,
+  litFromRows,
   minChars,
   parseQty,
   rowLabel,
@@ -200,4 +201,42 @@ test("parseQty rejects malformed input", () => {
   assert.equal(parseQty("2 5"), null);
   assert.equal(parseQty("."), null);
   assert.equal(parseQty(","), null);
+});
+
+const row = (nombre, ipn, direcciones, extra = {}) => ({ pieza_pk: 1, nombre, ipn, direcciones, bajo: false, ...extra });
+
+test("litFromRows keeps the rows whose nombre contains the text", () => {
+  const rows = [row("Huevo azul", "A-1", [18, 17]), row("Humo", "B-2", [21])];
+  assert.deepEqual(litFromRows(rows, "hue"), { direcciones: [17, 18], bajos: [] });
+  assert.deepEqual(litFromRows(rows, "hu"), { direcciones: [17, 18, 21], bajos: [] });
+});
+
+test("litFromRows matches the ipn too", () => {
+  const rows = [row("Tornillo", "M3-10", [4]), row("Tuerca", "M4-20", [5])];
+  assert.deepEqual(litFromRows(rows, "m4"), { direcciones: [5], bajos: [] });
+});
+
+test("litFromRows ignores case and surrounding blanks but not accents", () => {
+  const rows = [row("Cañería", "X", [3]), row("Canasta", "Y", [8])];
+  assert.deepEqual(litFromRows(rows, "  CAÑ "), { direcciones: [3], bajos: [] });
+  assert.deepEqual(litFromRows(rows, "can"), { direcciones: [8], bajos: [] });
+});
+
+test("litFromRows skips rows without direcciones and tolerates null fields", () => {
+  const rows = [row("Humo", null, undefined), row("Hule", "", []), { nombre: "Huso", direcciones: [9] }];
+  assert.deepEqual(litFromRows(rows, "hu"), { direcciones: [9], bajos: [] });
+  assert.deepEqual(litFromRows(undefined, "hu"), { direcciones: [], bajos: [] });
+});
+
+test("litFromRows ignores the create row", () => {
+  const rows = [{ crear: true, nombre: "hu", direcciones: [1] }, row("Humo", "B", [2])];
+  assert.deepEqual(litFromRows(rows, "hu"), { direcciones: [2], bajos: [] });
+});
+
+test("litFromRows de-duplicates and sorts; bajos are a subset of direcciones", () => {
+  const rows = [row("Humo", "A", [21, 5], { bajo: true }), row("Hule", "B", [5, 30]), row("Huso", "C", [40], { bajo: false })];
+  const { direcciones, bajos } = litFromRows(rows, "hu");
+  assert.deepEqual(direcciones, [5, 21, 30, 40]);
+  assert.deepEqual(bajos, [5, 21]);
+  assert.ok(bajos.every((a) => direcciones.includes(a)));
 });

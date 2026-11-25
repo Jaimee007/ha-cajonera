@@ -87,6 +87,26 @@ export function suggestionRows(sugerencias, texto) {
   return exists ? rows : [...rows, { crear: true, nombre }];
 }
 
+export function litFromRows(rows, text) {
+  // Drawers to light for the suggestion rows whose nombre or ipn contains the typed text. Rows without
+  // placed drawers and the "create" row light nothing. Sorted, de-duplicated; bajos is a subset of direcciones.
+  // Empty text keeps every row: the server's own answer, which also matches by keywords and description.
+  const needle = String(text ?? "").trim().toLocaleLowerCase();
+  const direcciones = new Set();
+  const bajos = new Set();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (!r || r.crear) continue;
+    const haystack = [r.nombre, r.ipn].map((v) => String(v ?? "").toLocaleLowerCase());
+    if (!haystack.some((h) => h.includes(needle))) continue;
+    for (const a of r.direcciones ?? []) {
+      direcciones.add(a);
+      if (r.bajo) bajos.add(a);
+    }
+  }
+  const sorted = (set) => [...set].sort((a, b) => a - b);
+  return { direcciones: sorted(direcciones), bajos: sorted(bajos) };
+}
+
 export function createSequencer() {
   // Lets an async caller drop answers that were superseded by a newer request.
   let latest = 0;
