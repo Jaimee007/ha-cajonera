@@ -1,0 +1,415 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "mi atlas",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NoIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "ConsultarInventarioIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            }
+          ],
+          "samples": [
+            "cuántos {producto} quedan",
+            "cuántos {producto} me quedan",
+            "cuántos {producto} hay",
+            "cuántos {producto} tengo",
+            "cuántas {producto} quedan",
+            "cuántas {producto} me quedan",
+            "cuántas {producto} hay",
+            "cuántas {producto} tengo",
+            "cuánta {producto} queda",
+            "cuánta {producto} hay",
+            "cuánta {producto} tengo",
+            "cuánto {producto} queda",
+            "cuánto {producto} hay",
+            "cuánto queda de {producto}",
+            "cuánto hay de {producto}",
+            "qué queda de {producto}",
+            "dime cuántos {producto} quedan",
+            "dime cuántas {producto} quedan",
+            "dime cuánta {producto} queda",
+            "dime cuánto {producto} queda",
+            "dime el stock de {producto}",
+            "stock de {producto}",
+            "cantidad de {producto}",
+            "quedan {producto}",
+            "queda {producto}",
+            "tengo {producto}",
+            "hay {producto}",
+            "consulta {producto}",
+            "consultar {producto}",
+            "consulta los {producto}",
+            "consulta las {producto}",
+            "consulta el {producto}",
+            "consulta la {producto}",
+            "mira si hay {producto}",
+            "mira cuántos {producto} quedan",
+            "mira cuántas {producto} quedan",
+            "mira cuánta {producto} queda",
+            "comprueba si hay {producto}",
+            "revisa los {producto}",
+            "revisa las {producto}",
+            "revisa el {producto}",
+            "revisa la {producto}"
+          ]
+        },
+        {
+          "name": "AnadirInventarioIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            },
+            {
+              "name": "cantidad",
+              "type": "AMAZON.NUMBER"
+            },
+            {
+              "name": "uno",
+              "type": "UnoUna"
+            }
+          ],
+          "samples": [
+            "añade {cantidad} {producto}",
+            "añade {cantidad} de {producto}",
+            "añade {uno} {producto}",
+            "añadir {cantidad} {producto}",
+            "añadir {cantidad} de {producto}",
+            "añadir {uno} {producto}",
+            "que añada {cantidad} {producto}",
+            "que añada {cantidad} de {producto}",
+            "que añada {uno} {producto}",
+            "suma {cantidad} {producto}",
+            "suma {cantidad} de {producto}",
+            "suma {uno} {producto}",
+            "sumar {cantidad} {producto}",
+            "sumar {cantidad} de {producto}",
+            "sumar {uno} {producto}",
+            "que sume {cantidad} {producto}",
+            "que sume {cantidad} de {producto}",
+            "que sume {uno} {producto}",
+            "agrega {cantidad} {producto}",
+            "agrega {cantidad} de {producto}",
+            "agrega {uno} {producto}",
+            "que agregue {cantidad} {producto}",
+            "que agregue {cantidad} de {producto}",
+            "que agregue {uno} {producto}",
+            "mete {cantidad} {producto}",
+            "mete {cantidad} de {producto}",
+            "mete {uno} {producto}",
+            "meter {cantidad} {producto}",
+            "meter {cantidad} de {producto}",
+            "meter {uno} {producto}",
+            "que meta {cantidad} {producto}",
+            "que meta {cantidad} de {producto}",
+            "que meta {uno} {producto}",
+            "he metido {cantidad} {producto}",
+            "he metido {cantidad} de {producto}",
+            "he metido {uno} {producto}",
+            "guarda {cantidad} {producto}",
+            "guarda {cantidad} de {producto}",
+            "guarda {uno} {producto}",
+            "que guarde {cantidad} {producto}",
+            "que guarde {cantidad} de {producto}",
+            "que guarde {uno} {producto}",
+            "repón {cantidad} {producto}",
+            "repón {cantidad} de {producto}",
+            "repón {uno} {producto}",
+            "reponer {cantidad} {producto}",
+            "reponer {cantidad} de {producto}",
+            "reponer {uno} {producto}",
+            "he comprado {cantidad} {producto}",
+            "he comprado {cantidad} de {producto}",
+            "he comprado {uno} {producto}",
+            "compré {cantidad} {producto}",
+            "compré {cantidad} de {producto}",
+            "compré {uno} {producto}",
+            "pon {cantidad} {producto} más",
+            "pon {uno} {producto} más",
+            "que ponga {cantidad} {producto} más",
+            "que ponga {uno} {producto} más"
+          ]
+        },
+        {
+          "name": "RestarInventarioIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            },
+            {
+              "name": "cantidad",
+              "type": "AMAZON.NUMBER"
+            },
+            {
+              "name": "uno",
+              "type": "UnoUna"
+            }
+          ],
+          "samples": [
+            "resta {cantidad} {producto}",
+            "resta {cantidad} de {producto}",
+            "resta {uno} {producto}",
+            "restar {cantidad} {producto}",
+            "restar {cantidad} de {producto}",
+            "restar {uno} {producto}",
+            "que reste {cantidad} {producto}",
+            "que reste {cantidad} de {producto}",
+            "que reste {uno} {producto}",
+            "quita {cantidad} {producto}",
+            "quita {cantidad} de {producto}",
+            "quita {uno} {producto}",
+            "quitar {cantidad} {producto}",
+            "quitar {cantidad} de {producto}",
+            "quitar {uno} {producto}",
+            "que quite {cantidad} {producto}",
+            "que quite {cantidad} de {producto}",
+            "que quite {uno} {producto}",
+            "elimina {cantidad} {producto}",
+            "elimina {cantidad} de {producto}",
+            "elimina {uno} {producto}",
+            "que elimine {cantidad} {producto}",
+            "que elimine {cantidad} de {producto}",
+            "que elimine {uno} {producto}",
+            "saca {cantidad} {producto}",
+            "saca {cantidad} de {producto}",
+            "saca {uno} {producto}",
+            "que saque {cantidad} {producto}",
+            "que saque {cantidad} de {producto}",
+            "que saque {uno} {producto}",
+            "descuenta {cantidad} {producto}",
+            "descuenta {cantidad} de {producto}",
+            "descuenta {uno} {producto}",
+            "que descuente {cantidad} {producto}",
+            "que descuente {cantidad} de {producto}",
+            "que descuente {uno} {producto}",
+            "gasta {cantidad} {producto}",
+            "gasta {cantidad} de {producto}",
+            "gasta {uno} {producto}",
+            "he gastado {cantidad} {producto}",
+            "he gastado {cantidad} de {producto}",
+            "he gastado {uno} {producto}",
+            "gasté {cantidad} {producto}",
+            "gasté {cantidad} de {producto}",
+            "gasté {uno} {producto}",
+            "he usado {cantidad} {producto}",
+            "he usado {cantidad} de {producto}",
+            "he usado {uno} {producto}",
+            "he cogido {cantidad} {producto}",
+            "he cogido {cantidad} de {producto}",
+            "he cogido {uno} {producto}",
+            "me he comido {cantidad} {producto}",
+            "me he comido {cantidad} de {producto}",
+            "me he comido {uno} {producto}"
+          ]
+        },
+        {
+          "name": "ActualizarInventarioIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            },
+            {
+              "name": "cantidad",
+              "type": "AMAZON.NUMBER"
+            }
+          ],
+          "samples": [
+            "actualiza {producto} a {cantidad}",
+            "actualiza los {producto} a {cantidad}",
+            "actualiza las {producto} a {cantidad}",
+            "actualiza el {producto} a {cantidad}",
+            "actualiza la {producto} a {cantidad}",
+            "actualizar {producto} a {cantidad}",
+            "que actualice {producto} a {cantidad}",
+            "que actualice los {producto} a {cantidad}",
+            "que actualice las {producto} a {cantidad}",
+            "que actualice el {producto} a {cantidad}",
+            "que actualice la {producto} a {cantidad}",
+            "pon {producto} a {cantidad}",
+            "pon {producto} en {cantidad}",
+            "que ponga {producto} a {cantidad}",
+            "que ponga {producto} en {cantidad}",
+            "deja {producto} en {cantidad}",
+            "deja los {producto} en {cantidad}",
+            "deja las {producto} en {cantidad}",
+            "deja el {producto} en {cantidad}",
+            "deja la {producto} en {cantidad}",
+            "que deje {producto} en {cantidad}",
+            "que deje los {producto} en {cantidad}",
+            "que deje las {producto} en {cantidad}",
+            "que deje el {producto} en {cantidad}",
+            "que deje la {producto} en {cantidad}",
+            "fija {producto} en {cantidad}",
+            "ajusta {producto} a {cantidad}",
+            "establece {producto} en {cantidad}",
+            "marca {cantidad} {producto}",
+            "cambia {producto} a {cantidad}"
+          ]
+        },
+        {
+          "name": "LocalizarInventarioIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            }
+          ],
+          "samples": [
+            "dónde están los {producto}",
+            "dónde están las {producto}",
+            "dónde está el {producto}",
+            "dónde está la {producto}",
+            "dónde están {producto}",
+            "dónde está {producto}",
+            "dónde tengo {producto}",
+            "dónde tengo los {producto}",
+            "dónde tengo las {producto}",
+            "dónde tengo el {producto}",
+            "dónde tengo la {producto}",
+            "dónde guardo {producto}",
+            "dónde guardo los {producto}",
+            "dónde guardo las {producto}",
+            "dónde guardo el {producto}",
+            "dónde guardo la {producto}",
+            "dónde se guardan los {producto}",
+            "dónde se guardan las {producto}",
+            "dónde se guarda el {producto}",
+            "dónde se guarda la {producto}",
+            "en qué sitio están los {producto}",
+            "en qué sitio están las {producto}",
+            "en qué sitio está el {producto}",
+            "en qué sitio está la {producto}",
+            "en qué ubicación están los {producto}",
+            "en qué ubicación está el {producto}",
+            "en qué caja están los {producto}",
+            "en qué cajón están los {producto}",
+            "en qué cajón está el {producto}",
+            "en qué cajón está la {producto}",
+            "localiza {producto}",
+            "localiza los {producto}",
+            "localiza las {producto}",
+            "localiza el {producto}",
+            "localiza la {producto}",
+            "busca {producto}",
+            "busca los {producto}",
+            "busca las {producto}",
+            "busca el {producto}",
+            "busca la {producto}",
+            "ubicación de {producto}",
+            "ubicación de los {producto}",
+            "ubicación de las {producto}",
+            "ubicación del {producto}",
+            "ubicación de la {producto}",
+            "sitio de {producto}"
+          ]
+        },
+        {
+          "name": "RespuestaCajonIntent",
+          "slots": [
+            {
+              "name": "cajon",
+              "type": "TipoCajon"
+            }
+          ],
+          "samples": [
+            "en el {cajon}",
+            "el {cajon}",
+            "en la {cajon}",
+            "en {cajon}",
+            "cajón {cajon}",
+            "en el cajón {cajon}"
+          ]
+        },
+        {
+          "name": "RespuestaCantidadIntent",
+          "slots": [
+            {
+              "name": "cantidad",
+              "type": "AMAZON.NUMBER"
+            }
+          ],
+          "samples": [
+            "{cantidad}",
+            "son {cantidad}",
+            "pon {cantidad}",
+            "{cantidad} unidades",
+            "la cantidad es {cantidad}"
+          ]
+        },
+        {
+          "name": "RespuestaPiezaIntent",
+          "slots": [
+            {
+              "name": "producto",
+              "type": "TipoProducto"
+            }
+          ],
+          "samples": [
+            "el de {producto}",
+            "la de {producto}",
+            "los de {producto}",
+            "las de {producto}",
+            "me refiero a {producto}",
+            "es {producto}",
+            "el {producto}",
+            "la {producto}"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "UnoUna",
+          "values": [
+            {
+              "name": {
+                "value": "un"
+              }
+            },
+            {
+              "name": {
+                "value": "una"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TipoProducto",
+          "values": []
+        },
+        {
+          "name": "TipoCajon",
+          "values": []
+        }
+      ]
+    }
+  }
+}
