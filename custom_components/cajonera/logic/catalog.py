@@ -69,7 +69,10 @@ async def suggest(api, text: str, locations: dict[int, Location]) -> list[dict]:
         return []
     rows = []
     for part, items in zip(parts, stocks):
-        names = sorted({locations[pk].name for pk in _drawer_totals(items, locations)}, key=_name_key)
+        totals = _drawer_totals(items, locations)
+        names = sorted({locations[pk].name for pk in totals}, key=_name_key)
+        # What the card lights while typing: only drawers that exist on the cabinet.
+        addresses = sorted({locations[pk].address for pk in totals if not is_unplaced(locations[pk])})
         rows.append(
             {
                 "pieza_pk": part.pk,
@@ -78,6 +81,8 @@ async def suggest(api, text: str, locations: dict[int, Location]) -> list[dict]:
                 "categoria_pk": part.category_pk,
                 "total": part.total_stock,
                 "cajones": names,
+                "direcciones": addresses,
+                "bajo": part.is_low,
             }
         )
     return rows

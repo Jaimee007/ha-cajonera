@@ -96,6 +96,20 @@
         }
       }
     },
+    "iluminar_busqueda": {
+      "name": "Iluminar búsqueda",
+      "description": "Enciende los cajones de las sugerencias que muestra el panel. Una lista vacía apaga todas las luces de búsqueda.",
+      "fields": {
+        "direcciones": {
+          "name": "Direcciones",
+          "description": "Direcciones de los cajones a encender (máximo 10)."
+        },
+        "bajos": {
+          "name": "Bajos",
+          "description": "Direcciones de los cajones con existencias bajas, que se encienden en naranja."
+        }
+      }
+    },
     "pieza": {
       "name": "Ficha de pieza",
       "description": "Devuelve la ficha de una pieza, enciende sus cajones y la recuerda como última pieza.",
@@ -205,6 +219,20 @@
     "guardar_apagar": {
       "name": "Apagar guardar aquí",
       "description": "Apaga la luz magenta de guardar una pieza. No toca una búsqueda en curso."
+    },
+    "seleccionar": {
+      "name": "Seleccionar cajón",
+      "description": "Enciende en cian solo el cajón tocado en el panel durante 30 s y apaga las demás luces de órdenes.",
+      "fields": {
+        "direccion": {
+          "name": "Dirección",
+          "description": "Dirección del cajón (0 = base)."
+        }
+      }
+    },
+    "seleccion_apagar": {
+      "name": "Apagar selección",
+      "description": "Apaga la luz cian del cajón seleccionado. No toca una búsqueda ni un guardar aquí en curso."
     },
     "pieza_crear": {
       "name": "Crear pieza",

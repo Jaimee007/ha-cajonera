@@ -64,6 +64,7 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | `cajonera.redescubrir` | Map the cabinet again and sync its locations |
 | `cajonera.simular_apertura` | Open or close a simulated drawer (simulated drawers only) |
 | `cajonera.sugerir` | Suggest parts while typing, without lighting any drawer |
+| `cajonera.iluminar_busqueda` | Light the drawers of the suggestions the card shows while typing (an empty list puts them out) |
 | `cajonera.pieza` | Return a part's sheet, light its drawers and remember it as the last part |
 | `cajonera.inventario_anadir` | Add units of a part to a drawer |
 | `cajonera.inventario_actualizar` | Set the counted quantity of a part in a drawer |
@@ -73,6 +74,8 @@ All services live in the `cajonera` domain; fields and descriptions are in
 | `cajonera.sugerir_cajon` | Suggest the drawer for a new part of a category (it lights nothing) |
 | `cajonera.guardar_aqui` | Light in magenta the drawer a part is going to be stored in |
 | `cajonera.guardar_apagar` | Put out the magenta store-here light (a search in progress is left alone) |
+| `cajonera.seleccionar` | Light in cyan only the tapped drawer for 30 s; every other order light goes out |
+| `cajonera.seleccion_apagar` | Put out the cyan selection light (a search or store-here in progress is left alone) |
 | `cajonera.pieza_crear` | Create a part with its initial quantity in a drawer |
 | `cajonera.pieza_editar` | Change only the given details of a part |
 

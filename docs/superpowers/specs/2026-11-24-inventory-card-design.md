@@ -105,7 +105,8 @@ raise on InvenTree failures (they answer "No puedo consultar el inventario ahora
 
 | Service | Input | Returns | Side effects |
 |---|---|---|---|
-| `cajonera.sugerir` | `texto` | `{sugerencias: [{pieza_pk, nombre, ipn, categoria, total, cajones: [..]}]}`, at most **8**. **Every active InvenTree part** matches, including parts in no drawer (`cajones: []`, shown as «sin cajón»), so an existing part can always be opened instead of hitting the duplicate-name rule | **None.** No LED, no context |
+| `cajonera.sugerir` | `texto` | `{sugerencias: [{pieza_pk, nombre, ipn, categoria, total, cajones: [..], direcciones: [address], bajo}]}`, at most **8** (`direcciones`: the part's placed drawers, sorted; `bajo`: low stock, so the card can light them with `iluminar_busqueda`). **Every active InvenTree part** matches, including parts in no drawer (`cajones: []`, shown as «sin cajón»), so an existing part can always be opened instead of hitting the duplicate-name rule | **None.** No LED, no context |
+| `cajonera.iluminar_busqueda` | `direcciones: [address]`, `bajos: [address]` (both default `[]`) | — | Lights the given drawers in search mode (blue, or blue/orange if in `bajos`, 30 s), keeping only existing addresses and at most 10; an **empty list puts every search light out**. Does not touch the context |
 | `cajonera.pieza` | `pieza_pk` | part sheet: name, description, category, keywords, IPN, minimum, total, `cajones: [{cajon, direccion, cantidad}]` (**one row per drawer**, summed), plus `fuera: cantidad` for stock outside the cabinet | **Lights the part's drawers in search mode** (blue, or blue/orange if low, 30 s), like `inventario_buscar`, and sets the "he cogido" context to this part (and drawer if only one) |
 | `cajonera.inventario_anadir` | `pieza_pk`, `direccion`, `cantidad` | `{frase, hecho}` | Adds to the part's stock in that drawer, or **creates a stock item there** if it has none. Confirms on the drawer (green flash) |
 | `cajonera.inventario_actualizar` | `pieza_pk`, `direccion`, `cantidad` (≥ 0) | `{frase, hecho}` | Sets the **drawer total** of that part to `cantidad` (InvenTree stocktake) |
@@ -115,6 +116,8 @@ raise on InvenTree failures (they answer "No puedo consultar el inventario ahora
 | `cajonera.sugerir_cajon` | `categoria` | `{direccion, cajon, motivo}` or nulls | Only answers. The card lights the drawer in **"guardar" mode** (magenta, slow breathing, `09` S6) with `guardar_aqui` when it accepts the answer, and puts it out with `guardar_apagar` (no fields) when a null answer is accepted or the create screen is left; the light also ends when the drawer is opened, another light replaces it, or 30 s pass |
 | `cajonera.pieza_crear` | `nombre`, `categoria`, `direccion`, `cantidad`, optional `ipn`, `descripcion`, `palabras_clave`, `minimo` | `{frase, hecho, pieza_pk}` | Creates the part with its initial stock in that drawer, in one InvenTree call when possible |
 | `cajonera.pieza_editar` | `pieza_pk` + any of `nombre`, `descripcion`, `categoria`, `palabras_clave`, `ipn`, `minimo` | `{frase, hecho}` | Patches the part |
+
+While the user types, the card calls `iluminar_busqueda` with the union of the accepted suggestions' `direcciones` (`bajos`: those of rows with `bajo`). It does so only when it accepts a suggestions answer (sequence check), so a late answer never lights drawers for text the user has moved on from, and it clears with empty lists when the text drops below 2 characters, on Escape, and on "+ Crear". Opening a sheet (`pieza`) or running the full search (`inventario_buscar`) relights by itself.
 
 Rules:
 

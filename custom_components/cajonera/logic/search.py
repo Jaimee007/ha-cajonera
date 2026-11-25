@@ -7,7 +7,7 @@ differs, and that is the caller's business.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .inventree import InvenTreeError
 from .models import Location, Part, StockItem
@@ -75,6 +75,24 @@ def _one_part_phrase(part: Part, hits: list[Hit]) -> str:
     return f"Hay {join_es(names)}, {fmt_qty(part.total_stock)} en total." + _low_suffix(part)
 
 
+def group_hits(hits: list[Hit]) -> list[Hit]:
+    """One hit per part per drawer: the system counts per drawer, never per stock item.
+
+    The quantity is the sum of the drawer's items of that part. `stock` is the pk of the largest of them
+    (ties: lowest pk), kept so callers that still look at it have a real item to point at. A part whose
+    drawer total is 0 keeps its hit: it keeps its place in the drawer.
+    """
+    groups: dict[tuple[int, int], list[Hit]] = {}
+    for hit in hits:
+        groups.setdefault((hit.part.pk, hit.location.pk), []).append(hit)
+    out = []
+    for group in groups.values():
+        main = min(group, key=lambda h: (-h.stock.quantity, h.stock.pk))
+        total = sum(h.stock.quantity for h in group)
+        out.append(main if len(group) == 1 else replace(main, stock=replace(main.stock, quantity=total)))
+    return out
+
+
 async def search(api, text: str, locations: dict[int, Location]) -> SearchResult:
     """Find `text` in InvenTree and say which drawers hold it.
 
@@ -94,7 +112,7 @@ async def search(api, text: str, locations: dict[int, Location]) -> SearchResult
 
     by_part: list[tuple[Part, list[Hit]]] = []
     for part, items in zip(parts, stocks):
-        hits = [Hit(part, s, locations[s.location_pk]) for s in items if s.location_pk in locations]
+        hits = group_hits([Hit(part, s, locations[s.location_pk]) for s in items if s.location_pk in locations])
         if hits:
             by_part.append((part, hits))
 
@@ -118,8 +136,9 @@ async def search(api, text: str, locations: dict[int, Location]) -> SearchResult
 
 
 async def drawer_contents(api, location: Location) -> list[Hit]:
-    """Everything stored in one drawer, for the panel."""
+    """Everything stored in one drawer, for the panel: one hit per part, sorted by part name."""
     items = await api.stock_in_location(location.pk)
     parts = await asyncio.gather(*(api.get_part(pk) for pk in _unique(s.part_pk for s in items)))
     by_pk = {p.pk: p for p in parts}
-    return [Hit(by_pk[s.part_pk], s, location) for s in items]
+    hits = group_hits([Hit(by_pk[s.part_pk], s, location) for s in items])
+    return sorted(hits, key=lambda h: (h.part.name.casefold(), h.part.pk))

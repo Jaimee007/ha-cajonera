@@ -160,3 +160,128 @@ async def test_search_with_no_drawers_clears_lights_and_arms_no_timer(sim):
     sim.search([], low=set())
     assert all(s.mode == "reposo" for s in sim.states())
     assert sim._search_timer is None and sim._store_timer is None
+
+
+# Selection: the drawer tapped on the card
+
+async def test_select_lights_only_that_drawer_and_puts_every_order_light_out(sim):
+    sim.search([0, 21], low={21})
+    sim.select(17)
+    assert (state(sim, 17).mode, state(sim, 17).rgb) == ("seleccionado", (0, 200, 255))
+    assert state(sim, 0).mode == "reposo" and state(sim, 21).mode == "reposo"
+    sim.store_here(21, seconds=5)
+    sim.select(17)
+    assert [s.mode for s in sim.states()] == ["reposo", "seleccionado", "reposo"]
+
+
+async def test_select_ends_after_its_time():
+    sim = DrawerSimulator(DRAWERS, select_seconds=0.05, **FAST)
+    sim.select(17)
+    assert state(sim, 17).mode == "seleccionado"
+    await asyncio.sleep(0.1)
+    assert state(sim, 17).mode == "reposo"
+    assert all(s.mode == "reposo" for s in sim.states())
+
+
+async def test_select_again_renews_the_time():
+    sim = DrawerSimulator(DRAWERS, select_seconds=0.1, **FAST)
+    sim.select(17)
+    await asyncio.sleep(0.06)
+    sim.select(17)  # renewed: the first timer would have ended it at 0.1
+    await asyncio.sleep(0.06)  # t = 0.12
+    assert state(sim, 17).mode == "seleccionado"
+    await asyncio.sleep(0.08)  # t = 0.20, past the renewed end at 0.16
+    assert state(sim, 17).mode == "reposo"
+
+
+async def test_select_another_drawer_moves_the_light():
+    sim = DrawerSimulator(DRAWERS, select_seconds=0.1, **FAST)
+    sim.select(17)
+    await asyncio.sleep(0.06)
+    sim.select(21)
+    assert [s.mode for s in sim.states()] == ["reposo", "reposo", "seleccionado"]
+    await asyncio.sleep(0.06)  # the first timer must not put the new one out
+    assert state(sim, 21).mode == "seleccionado"
+
+
+async def test_search_replaces_a_selection_and_cancels_its_timer():
+    sim = DrawerSimulator(DRAWERS, select_seconds=0.05, search_seconds=5, found_seconds=0.05,
+                          flash_seconds=0.05, identify_seconds=0.05)
+    sim.select(17)
+    sim.search([21], low=set())
+    assert [s.mode for s in sim.states()] == ["reposo", "reposo", "buscado"]
+    assert sim._select_timer is None
+    await asyncio.sleep(0.1)
+    assert state(sim, 21).mode == "buscado"
+
+
+async def test_store_here_replaces_a_selection_and_cancels_its_timer():
+    sim = DrawerSimulator(DRAWERS, select_seconds=0.05, **FAST)
+    sim.select(17)
+    sim.store_here(21, seconds=5)
+    assert [s.mode for s in sim.states()] == ["reposo", "reposo", "guardar"]
+    assert sim._select_timer is None
+    await asyncio.sleep(0.1)
+    assert state(sim, 21).mode == "guardar"
+
+
+async def test_select_replaces_a_search_and_its_timer_does_not_fire_later():
+    sim = DrawerSimulator(DRAWERS, select_seconds=5, search_seconds=0.05, found_seconds=0.05,
+                          flash_seconds=0.05, identify_seconds=0.05)
+    sim.search([21], low=set())
+    sim.select(17)
+    assert sim._search_timer is None
+    await asyncio.sleep(0.1)
+    assert state(sim, 17).mode == "seleccionado"
+
+
+async def test_opening_the_selected_drawer_is_white_and_ends_the_selection(sim):
+    sim.select(17)
+    sim.set_open(17, True)
+    assert (state(sim, 17).mode, state(sim, 17).rgb) == ("abierto", (255, 255, 255))
+    assert sim._select_timer is None
+    sim.set_open(17, False)
+    assert state(sim, 17).mode == "reposo"  # no green "encontrado", and the light stays out
+
+
+async def test_opening_another_drawer_leaves_the_selection(sim):
+    sim.select(17)
+    sim.set_open(21, True)
+    assert state(sim, 21).mode == "abierto"
+    assert state(sim, 17).mode == "seleccionado"
+
+
+async def test_open_drawer_stays_white_when_selected(sim):
+    sim.set_open(17, True)
+    sim.select(17)
+    assert state(sim, 17).mode == "abierto"
+
+
+async def test_clear_selection_leaves_a_search_in_progress_alone(sim):
+    sim.clear_selection()  # nothing lit: no-op
+    sim.select(17)
+    sim.clear_selection()
+    assert all(s.mode == "reposo" for s in sim.states())
+    assert sim._select_timer is None
+    sim.search([21], low=set())
+    sim.clear_selection()
+    assert state(sim, 21).mode == "buscado"
+    sim.store_here(0, seconds=5)
+    sim.clear_selection()
+    assert state(sim, 0).mode == "guardar"
+
+
+async def test_select_unknown_address_puts_everything_to_rest_without_a_timer(sim):
+    sim.search([17], low=set())
+    sim.select(99)
+    assert all(s.mode == "reposo" for s in sim.states())
+    assert sim._select_timer is None and sim._search_timer is None
+
+
+async def test_identify_still_a_short_overlay(sim):
+    sim.select(21)
+    sim.identify(17)
+    assert state(sim, 17).mode == "identificar"
+    assert state(sim, 21).mode == "seleccionado"
+    await asyncio.sleep(0.1)
+    assert state(sim, 17).mode == "reposo"

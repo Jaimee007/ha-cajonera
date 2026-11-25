@@ -26,7 +26,7 @@ from .context import context_after_search
 from .inventree import InvenTreeError
 from .low_stock import LowStockReport, low_stock_report
 from .models import Location
-from .search import DOWN_PHRASE, drawer_contents, search
+from .search import DOWN_PHRASE, MAX_LIT, drawer_contents, search
 from .simulator import DrawerSimulator
 from .stock_ops import INVALID_QTY, MAYBE_STOCK, OpResult, add_to_drawer, count_drawer, move_between
 from .sync import apply_sync, plan_sync
@@ -62,6 +62,8 @@ class Cajonera:
         self.context: Context | None = None
         self.low = LowStockReport()
         self._sync_lock = asyncio.Lock()
+        self._tasks: set[asyncio.Task] = set()  # background work; a reference keeps it from being collected
+        self._read_refresh: asyncio.Task | None = None  # the low-stock refresh a read started, while it runs
 
     # Background work (also called inline, bounded by the deadline)
 
@@ -112,6 +114,24 @@ class Cajonera:
             return
         self.on_change()
 
+    def _spawn(self, coro) -> asyncio.Task:
+        task = asyncio.get_running_loop().create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
+    def _refresh_low_after_read(self) -> None:
+        """A read just saw fresh InvenTree data, so the low-stock report may be stale (someone edited
+        InvenTree by hand). Refresh it in the background; one at a time, a read during a refresh adds none."""
+        if self._read_refresh is not None and not self._read_refresh.done():
+            return
+        self._read_refresh = self._spawn(self.refresh_low())
+
+    async def drain(self) -> None:
+        """Wait for the background work in flight (for tests)."""
+        while self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
     async def tick(self) -> None:
         """Periodic: retry a pending sync, else refresh locations; then low stock."""
         try:
@@ -153,6 +173,8 @@ class Cajonera:
         if not await self._ready():
             return {"frase": DOWN_PHRASE, "resultados": []}
         result = await search(self.api, texto, self.locations)
+        if result.phrase != DOWN_PHRASE:
+            self._refresh_low_after_read()
         if result.phrase != DOWN_PHRASE:
             self.context = context_after_search(result, self.now())
         low = {h.location.address for h in result.hits if h.part.is_low}
@@ -205,7 +227,7 @@ class Cajonera:
         if result.done:
             if result.address is not None:
                 self.simulator.confirm(result.address, result.low)
-            asyncio.get_running_loop().create_task(self.refresh_low())
+            self._spawn(self.refresh_low())
         return {"frase": result.phrase, "hecho": result.done}
 
     async def contenido(self, direccion: int) -> dict:
@@ -221,6 +243,7 @@ class Cajonera:
             hits = await drawer_contents(self.api, location)
         except InvenTreeError:
             return {"cajon": location.name, "piezas": [], "frase": DOWN_PHRASE}
+        self._refresh_low_after_read()
         return {
             "cajon": location.name,
             "piezas": [
@@ -251,8 +274,19 @@ class Cajonera:
     async def _sugerir(self, texto: str | None) -> dict:
         if not await self._ready():
             return {"sugerencias": []}
-        # Typing into the card must never light a drawer or touch the context.
+        # This only answers: the card lights the drawers with iluminar_busqueda when it accepts the answer.
         return {"sugerencias": await suggest(self.api, texto or "", self.locations)}
+
+    def iluminar_busqueda(self, direcciones: list[int], bajos: list[int]) -> None:
+        """Light the drawers of the suggestions the card shows; an empty list puts every search light out.
+
+        Unlike `sugerir`, which only answers, this is the card's explicit order, given when it accepts an
+        answer, so a late answer can never light drawers for text the user has moved on from. The context
+        is not touched: nothing was taken or chosen yet.
+        """
+        real = {d.address for d in self.simulator.drawers()}
+        addresses = [a for a in dict.fromkeys(direcciones) if a in real][:MAX_LIT]
+        self.simulator.search(addresses, set(bajos) & set(addresses))
 
     async def pieza(self, pieza_pk: int) -> dict:
         return await self._bounded(self._pieza(pieza_pk), {"frase": DOWN_PHRASE})
@@ -263,6 +297,7 @@ class Cajonera:
         sheet = await part_sheet(self.api, pieza_pk, self.locations)
         if "frase" in sheet:
             return sheet
+        self._refresh_low_after_read()
         addresses = [row["direccion"] for row in sheet["cajones"]]
         location_pk = None
         if len(addresses) == 1:
@@ -340,7 +375,7 @@ class Cajonera:
                 self.simulator.confirm(result.address, result.low)
             if result.part_pk is not None and result.location_pk is not None:
                 self.context = Context(result.part_pk, result.location_pk, self.now())
-            asyncio.get_running_loop().create_task(self.refresh_low())
+            self._spawn(self.refresh_low())
         answer = {"frase": result.phrase, "hecho": result.done}
         if with_part_pk:
             answer["pieza_pk"] = result.part_pk
@@ -376,3 +411,13 @@ class Cajonera:
     def guardar_apagar(self) -> None:
         """Put out the "store it here" light; a search in progress is left alone."""
         self.simulator.clear_store()
+
+    def seleccionar(self, direccion: int) -> None:
+        """Light only the drawer tapped on the card (30 s); every other order light goes out."""
+        # An unknown address is ignored: lighting nothing must not end a search in progress.
+        if any(d.address == direccion for d in self.simulator.drawers()):
+            self.simulator.select(direccion)
+
+    def seleccion_apagar(self) -> None:
+        """Put out the selection light; a search or store-here in progress is left alone."""
+        self.simulator.clear_selection()

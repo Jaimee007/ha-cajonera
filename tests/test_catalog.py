@@ -59,14 +59,38 @@ async def test_suggest_rows_have_drawers_and_total():
     )
     rows = await suggest(f, "  torn ", LOCS)
     assert rows == [
-        {"pieza_pk": 5, "nombre": "Tornillo M3", "ipn": "TM3", "categoria_pk": 2, "total": 50.0, "cajones": ["A1", "B1"]}
+        {
+            "pieza_pk": 5,
+            "nombre": "Tornillo M3",
+            "ipn": "TM3",
+            "categoria_pk": 2,
+            "total": 50.0,
+            "cajones": ["A1", "B1"],
+            "direcciones": [16, 19],
+            "bajo": False,
+        }
     ]
+
+
+async def test_suggest_addresses_are_sorted_and_skip_unplaced_drawers():
+    # B1 (19) is listed before A1 (16) in the stock, and the part is also in an unplaced drawer (20)
+    f = fake([part(5, "Tornillo M3")], [stock(1, 5, 5, 13), stock(2, 5, 5, 10), stock(3, 5, 5, 14)])
+    rows = await suggest(f, "tornillo", LOCS)
+    assert rows[0]["direcciones"] == [16, 19]
+    assert rows[0]["cajones"] == ["A1", "B1", "Cajón 20 (sin posición)"]
+
+
+async def test_suggest_row_says_whether_the_part_is_low():
+    f = fake([part(5, "Tornillo M3", total=3, minimum=10), part(6, "Tornillo M4", total=30, minimum=10)])
+    rows = await suggest(f, "tornillo", LOCS)
+    assert {r["pieza_pk"]: r["bajo"] for r in rows} == {5: True, 6: False}
 
 
 async def test_suggest_includes_parts_without_drawer():
     f = fake([part(5, "Tornillo M3", total=7)], [stock(3, 5, 7, 99)])
     rows = await suggest(f, "tornillo", LOCS)
     assert rows[0]["cajones"] == []
+    assert rows[0]["direcciones"] == []
     assert rows[0]["total"] == 7.0
 
 

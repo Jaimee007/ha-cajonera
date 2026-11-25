@@ -200,8 +200,54 @@ async def test_sugerir_has_no_side_effects():
     caj = make(stocked())
     r = await caj.sugerir("m3")
     assert [s["nombre"] for s in r["sugerencias"]] == ["Tornillo M3x8"]
+    assert r["sugerencias"][0]["direcciones"] == [0]
     assert set(_modes(caj).values()) == {"reposo"}
     assert caj.context is None
+
+
+async def test_iluminar_busqueda_lights_drawers_and_marks_low_ones():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([0, 17], [17])
+    assert _modes(caj) == {0: "buscado", 17: "buscado_bajo"}
+
+
+async def test_iluminar_busqueda_ignores_unknown_addresses_and_duplicates():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([30, 0, 0], [30, 0])
+    assert _modes(caj) == {0: "buscado_bajo", 17: "reposo"}
+    caj.iluminar_busqueda([30], [])  # nothing real to light: everything goes out
+    assert set(_modes(caj).values()) == {"reposo"}
+
+
+async def test_iluminar_busqueda_lights_at_most_ten_drawers():
+    drawers = [Drawer(a, a, 0) for a in range(12)]
+    caj = make(stocked(), drawers=drawers)
+    caj.iluminar_busqueda(list(range(12)), [])
+    lit = [a for a, mode in _modes(caj).items() if mode == "buscado"]
+    assert lit == list(range(10))
+
+
+async def test_iluminar_busqueda_empty_list_puts_every_search_light_out():
+    caj = make(stocked())
+    await caj.sync()
+    caj.iluminar_busqueda([0, 17], [])
+    caj.iluminar_busqueda([], [])
+    assert set(_modes(caj).values()) == {"reposo"}
+    assert caj.simulator._search_timer is None
+
+
+async def test_iluminar_busqueda_leaves_the_context_alone():
+    caj = make(stocked())
+    await caj.pieza(5)
+    before = caj.context
+    assert before is not None
+    caj.iluminar_busqueda([17], [])
+    assert _modes(caj) == {0: "reposo", 17: "buscado"}
+    assert caj.context == before
+    caj.iluminar_busqueda([], [])
+    assert caj.context == before
 
 
 async def test_pieza_lights_drawers_and_sets_context():
@@ -460,3 +506,106 @@ async def test_pieza_in_no_drawer_clears_old_lights_and_keeps_context():
     caj.guardar_aqui(17)
     await caj.pieza(6)
     assert set(_modes(caj).values()) == {"reposo"}
+
+
+def _eggs(items, minimum=10, total=12):
+    # Two stock items of one part in B1 (pk 1002): a kept-at-zero one and one made by hand.
+    return FakeInventory([Part(6, "Huevos", minimum, total)], items, [])
+
+
+async def test_contenido_one_row_per_part_with_summed_quantity():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False), StockItem(6, 6, "", 12.0, 1002)])
+    r = await make(fake).contenido(17)
+    assert r["piezas"] == [{"stock": 6, "pieza_pk": 6, "pieza": "Huevos", "cantidad": 12.0, "bajo": False}]
+
+
+async def test_contenido_two_parts_two_rows_and_single_zero_item_row():
+    fake = FakeInventory([Part(6, "Huevos", 0, 0), Part(5, "Arandela", 0, 3)],
+                         [StockItem(2, 6, "", 0.0, 1002, False), StockItem(9, 5, "", 3.0, 1002)], [])
+    r = await make(fake).contenido(17)
+    assert [(p["pieza"], p["cantidad"]) for p in r["piezas"]] == [("Arandela", 3.0), ("Huevos", 0.0)]
+
+
+async def test_buscar_one_row_per_part_per_drawer():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False), StockItem(6, 6, "", 12.0, 1002)])
+    r = await make(fake).buscar("huevos")
+    assert [(x["stock"], x["cantidad"], x["cajon"]) for x in r["resultados"]] == [(6, 12.0, "B1")]
+
+
+async def test_contenido_refreshes_a_stale_low_list():
+    # InvenTree changed by hand: the part is no longer low, but the report still says so.
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False)], total=0)
+    caj = make(fake)
+    await caj.tick()
+    assert [lp.part.pk for lp in caj.low.parts] == [6]
+    fake.stock[6] = StockItem(6, 6, "", 12.0, 1002)
+    fake.parts[6] = Part(6, "Huevos", 10, 12)
+    await caj.contenido(17)
+    await caj.drain()
+    assert caj.low.parts == []
+
+
+async def test_reads_refresh_low_at_most_one_at_a_time():
+    fake = _eggs([StockItem(2, 6, "", 0.0, 1002, False)], total=0)
+    caj = make(fake)
+    await caj.sync()
+    calls = []
+    orig = caj.refresh_low
+
+    async def counting():
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        await orig()
+
+    caj.refresh_low = counting
+    await caj.contenido(17)
+    await caj.buscar("huevos")
+    await caj.pieza(6)
+    await caj.drain()
+    assert len(calls) == 1
+    await caj.contenido(17)  # nothing in flight any more: a new one may start
+    await caj.drain()
+    assert len(calls) == 2
+
+
+async def test_seleccionar_lights_only_the_tapped_drawer():
+    caj = make(stocked())
+    await caj.sync()
+    await caj.buscar("m3")
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}
+    caj.seleccionar(17)
+    assert _modes(caj) == {0: "reposo", 17: "seleccionado"}
+    caj.seleccionar(0)
+    assert _modes(caj) == {0: "seleccionado", 17: "reposo"}
+
+
+async def test_seleccionar_unknown_address_is_ignored():
+    caj = make(stocked())
+    await caj.sync()
+    caj.seleccionar(17)
+    caj.seleccionar(30)
+    assert _modes(caj) == {0: "reposo", 17: "seleccionado"}
+
+
+async def test_seleccionar_does_not_touch_the_context():
+    caj = make(stocked())
+    await caj.sync()
+    await caj.buscar("m3")
+    before = caj.context
+    assert before is not None
+    caj.seleccionar(17)
+    assert caj.context == before
+    caj.seleccion_apagar()
+    assert caj.context == before
+
+
+async def test_seleccion_apagar_clears_only_the_selection():
+    caj = make(stocked())
+    await caj.sync()
+    caj.seleccion_apagar()  # nothing lit: no-op
+    caj.seleccionar(17)
+    caj.seleccion_apagar()
+    assert set(_modes(caj).values()) == {"reposo"}
+    await caj.buscar("m3")
+    caj.seleccion_apagar()  # a search in progress is not ours to clear
+    assert _modes(caj) == {0: "buscado", 17: "reposo"}

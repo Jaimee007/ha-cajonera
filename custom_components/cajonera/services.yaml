@@ -98,6 +98,17 @@ sugerir:
       selector:
         text:
 
+iluminar_busqueda:
+  fields:
+    direcciones:
+      example: "[0, 17]"
+      selector:
+        object:
+    bajos:
+      example: "[17]"
+      selector:
+        object:
+
 pieza:
   fields:
     pieza_pk:
@@ -241,6 +252,19 @@ guardar_aqui:
           mode: box
 
 guardar_apagar:
+
+seleccionar:
+  fields:
+    direccion:
+      required: true
+      example: 17
+      selector:
+        number:
+          min: 0
+          max: 31
+          mode: box
+
+seleccion_apagar:
 
 pieza_crear:
   fields:
