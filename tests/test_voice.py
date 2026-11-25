@@ -172,11 +172,12 @@ async def test_retirar_context_of_another_part_is_not_used_for_the_drawer():
 
 async def test_explicit_drawer_not_holding_the_part_is_refused():
     """Review Focus 2: a misheard drawer is refused and re-asked, never used or created."""
-    fake = one_part_in_two_drawers()
-    r = await plan(fake, pieza_pk=5, cantidad=2, cajon="C1")
-    assert r.frase == "No hay Tornillo M3x8 en el C1; hay en el B1 y en el B3. ¿En cuál?"
-    assert r.pregunta == Pregunta("cajon", 5, ["B1", "B3"])
-    assert fake.added == [] and fake.removed == [] and fake.counted == []
+    for accion in ("retirar", "actualizar"):
+        fake = one_part_in_two_drawers()
+        r = await plan(fake, accion=accion, pieza_pk=5, cantidad=2, cajon="C1")
+        assert r.frase == "No hay Tornillo M3x8 en el C1; hay en el B1 y en el B3. ¿En cuál?"
+        assert r.pregunta == Pregunta("cajon", 5, ["B1", "B3"])
+        assert fake.added == [] and fake.removed == [] and fake.counted == []
 
 
 async def test_unknown_drawer_name_is_refused():
