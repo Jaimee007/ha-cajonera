@@ -245,3 +245,89 @@ async def test_text_that_matches_nothing():
 async def test_no_part_asks_which_for_writes():
     r = await plan(one_part_in_b1(), accion="anadir", cantidad=2)
     assert r.frase == "¿De qué producto?" and r.pregunta == Pregunta("pieza", None, [])
+
+
+# ---- Task 3: execution and confirmation
+
+from logic.voice import voz  # noqa: E402
+
+
+async def run(fake, *, accion, context=None, **kw):
+    return await voz(fake, LOCS, context, NOW, accion=accion, **kw)
+
+
+def huevos(qty=12, minimum=10):
+    return inv([part(5, "Huevos", qty, minimum)], [item(9, 5, qty, 11)])
+
+
+async def test_retirar_confirmation_names_part_quantity_drawer():
+    r = await run(huevos(12), accion="retirar", pieza_pk=5, cantidad=2)
+    assert r.frase == "Hecho. He retirado 2 de Huevos del B1. Quedan 10."
+    assert r.hecho and r.pregunta is None
+
+
+async def test_anadir_confirmation():
+    r = await run(huevos(12), accion="anadir", pieza_pk=5, cantidad=6)
+    assert r.frase == "Hecho. He añadido 6 de Huevos al B1. Ahora hay 18 en el B1."
+
+
+async def test_actualizar_confirmation():
+    r = await run(huevos(12), accion="actualizar", pieza_pk=5, cantidad=8)
+    assert r.frase == "Hecho. He dejado Huevos en 8 en el B1. El B1 tiene ahora 8."
+
+
+async def test_retirar_low_stock_warning_is_kept():
+    r = await run(huevos(12, minimum=10), accion="retirar", pieza_pk=5, cantidad=5)
+    assert r.frase == "Hecho. He retirado 5 de Huevos del B1. Quedan 7, por debajo del mínimo de 10."
+    assert r.confirmar == (17, True)
+
+
+async def test_success_sets_confirm_context_and_low_refresh():
+    r = await run(huevos(12), accion="retirar", pieza_pk=5, cantidad=2)
+    assert r.confirmar == (17, False)
+    assert r.contexto == Context(5, 11, NOW)
+    assert r.refrescar_bajo and r.hecho
+
+
+async def test_refusal_has_no_side_effects():
+    fake = one_part_in_two_drawers()
+    r = await run(fake, accion="retirar", pieza_pk=5, cantidad=2, cajon="C1")
+    assert not r.hecho and r.confirmar is None and r.contexto is None and not r.refrescar_bajo
+    assert fake.removed == []
+
+
+async def test_question_has_no_side_effects_but_lights_candidates():
+    fake = one_part_in_two_drawers()
+    r = await run(fake, accion="anadir", pieza_pk=5, cantidad=2)
+    assert r.pregunta.falta == "cajon" and not r.hecho and r.confirmar is None and r.contexto is None
+    assert sorted(r.iluminar) == [17, 18]
+
+
+async def test_write_failure_after_start_says_maybe_registered():
+    fake = huevos(12)
+    fake.fail_on = {"remove_stock"}
+    r = await run(fake, accion="retirar", pieza_pk=5, cantidad=2)
+    assert not r.hecho and r.frase.startswith("No sé si se ha registrado")
+    assert r.confirmar is None and r.contexto is None
+
+
+async def test_voice_uses_the_voice_note():
+    fake = huevos(12)
+    await run(fake, accion="anadir", pieza_pk=5, cantidad=1)
+    assert fake.last_notes == "cajonera: voz"
+    fake = huevos(12)
+    await run(fake, accion="retirar", pieza_pk=5, cantidad=1)
+    assert fake.last_notes == "cajonera: voz"
+    fake = huevos(12)
+    await run(fake, accion="actualizar", pieza_pk=5, cantidad=1)
+    assert fake.last_notes == "cajonera: voz"
+
+
+async def test_buscar_via_voz_matches_voz_buscar():
+    fake = huevos(12)
+    assert await run(fake, accion="buscar", pieza_pk=5) == await voz_buscar(fake, LOCS, None, NOW, pieza_pk=5)
+
+
+async def test_unknown_action_is_refused_politely():
+    r = await run(huevos(12), accion="borrar", pieza_pk=5)
+    assert not r.hecho and r.frase == "No sé hacer eso."

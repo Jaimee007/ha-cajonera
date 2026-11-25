@@ -12,8 +12,9 @@ from datetime import datetime
 from .inventree import InvenTreeError
 from .models import Location, Part
 from .phrases import fmt_qty, join_es
+from .stock_ops import add_to_drawer, count_drawer
 from .search import DOWN_PHRASE, MAX_LIT, NO_MATCH_PHRASE, is_unplaced, search_parts_result
-from .withdraw import CONTEXT_TTL, Context, candidate_parts
+from .withdraw import CONTEXT_TTL, Context, candidate_parts, withdraw_by_part
 
 MAX_CANDIDATES = 20  # parts Alexa may send or HA may offer in one question
 
@@ -222,3 +223,61 @@ async def _plan(api, locations, context, now, accion, pieza_pk, pieza_pks, texto
     if accion == "anadir":
         return _pregunta_cajon(part, "¿En qué cajón la guardo?", everything)
     return VoiceResult(f"Hay {fmt_qty(part.total_stock)} de {part.name}, pero no está en ningún cajón.")
+
+
+# ---- Execution
+
+VOICE_NOTE = "cajonera: voz"
+
+
+def _strip_hecho(phrase: str) -> str:
+    return phrase[len("Hecho. "):] if phrase.startswith("Hecho. ") else phrase
+
+
+async def voz(
+    api,
+    locations: dict[int, Location],
+    context: Context | None,
+    now: datetime,
+    *,
+    accion: str,
+    pieza_pk: int | None = None,
+    pieza_pks: list[int] | None = None,
+    texto: str | None = None,
+    cantidad: float | None = None,
+    cajon: str | None = None,
+    uno: bool = False,
+) -> VoiceResult:
+    """One spoken order: search, or a write that is only done when nothing is missing or ambiguous."""
+    if accion == "buscar":
+        return await voz_buscar(api, locations, context, now, pieza_pk=pieza_pk, pieza_pks=pieza_pks, texto=texto)
+    if accion not in ("anadir", "retirar", "actualizar"):
+        return VoiceResult("No sé hacer eso.")
+    plan = await plan_voice(
+        api, locations, context, now, accion=accion, pieza_pk=pieza_pk, pieza_pks=pieza_pks, texto=texto,
+        cantidad=cantidad, cajon=cajon, uno=uno,
+    )
+    if isinstance(plan, VoiceResult):
+        return plan
+    part, location, qty = plan.part, plan.location, plan.cantidad
+    if accion == "retirar":
+        done = await withdraw_by_part(api, part.pk, qty, location.name, now, locations, notes=VOICE_NOTE)
+        ok, text, address, low = done.done, done.phrase, done.address, done.low
+        lead = f"Hecho. He retirado {fmt_qty(qty)} de {part.name} del {location.name}."
+    else:
+        if accion == "anadir":
+            op = await add_to_drawer(api, part.pk, location.address, qty, locations, notes=VOICE_NOTE)
+            lead = f"Hecho. He añadido {fmt_qty(qty)} de {part.name} al {location.name}."
+        else:
+            op = await count_drawer(api, part.pk, location.address, qty, locations, notes=VOICE_NOTE)
+            lead = f"Hecho. He dejado {part.name} en {fmt_qty(qty)} en el {location.name}."
+        ok, text, address, low = op.done, op.phrase, op.address, op.low
+    if not ok:
+        return VoiceResult(text)  # a refusal or a failure: nothing was recorded, or maybe it was (the wording says)
+    return VoiceResult(
+        f"{lead} {_strip_hecho(text)}",
+        hecho=True,
+        confirmar=(address, low) if address is not None else None,
+        contexto=Context(part.pk, location.pk, now),
+        refrescar_bajo=True,
+    )

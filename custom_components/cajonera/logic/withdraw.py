@@ -200,8 +200,11 @@ async def withdraw_by_part(
     drawer: str | None,
     now: datetime,
     locations: dict[int, Location],
+    notes: str = "cajonera: panel",
 ) -> WithdrawResult:
-    """Panel withdrawal of a known part: no name resolution, same drawer rules as the voice route."""
+    """Withdrawal of a known part: no name resolution, same drawer rules as the voice route.
+
+    `notes` is what InvenTree's stock history records ("cajonera: panel" or "cajonera: voz")."""
     if _bad_quantity(quantity):
         return WithdrawResult(ASK_QTY)
     drawer = (drawer or "").strip()
@@ -220,7 +223,7 @@ async def withdraw_by_part(
             chosen = next(iter(drawers))
         else:
             return WithdrawResult(f"Hay {where_all}, ¿de cuál?")
-        return await _remove(api, part, locations[chosen], drawers[chosen], quantity, now, locations, "cajonera: panel")
+        return await _remove(api, part, locations[chosen], drawers[chosen], quantity, now, locations, notes)
     except InvenTreeError:
         return WithdrawResult(DOWN_PHRASE)
 

@@ -85,7 +85,7 @@ async def _finish(api, phrase: str, part_pk: int, location: Location) -> OpResul
 
 
 async def add_to_drawer(
-    api, part_pk: int, address: int, quantity: float, locations: dict[int, Location]
+    api, part_pk: int, address: int, quantity: float, locations: dict[int, Location], notes: str = "cajonera: añadir"
 ) -> OpResult:
     if quantity is None or quantity <= 0:
         return OpResult(INVALID_QTY)
@@ -101,7 +101,7 @@ async def add_to_drawer(
             if item.delete_on_deplete:
                 await api.set_keep_when_empty(item.pk)
             writes.started = True
-            await api.add_stock(item.pk, quantity, "cajonera: añadir")
+            await api.add_stock(item.pk, quantity, notes)
         else:
             writes.started = True
             await api.create_stock(part_pk, location.pk, quantity)
@@ -111,7 +111,9 @@ async def add_to_drawer(
         return OpResult(MAYBE_STOCK if writes.started else DOWN_PHRASE)
 
 
-async def count_drawer(api, part_pk: int, address: int, quantity: float, locations) -> OpResult:
+async def count_drawer(
+    api, part_pk: int, address: int, quantity: float, locations, notes: str = "cajonera: recuento"
+) -> OpResult:
     if quantity is None or quantity < 0:
         return OpResult(INVALID_QTY)
     location = _find(locations, address)
@@ -128,7 +130,7 @@ async def count_drawer(api, part_pk: int, address: int, quantity: float, locatio
         else:
             item = await _single_item(api, items, location, writes)
             writes.started = True
-            await api.count_stock(item.pk, quantity, "cajonera: recuento")
+            await api.count_stock(item.pk, quantity, notes)
         return await _finish(api, f"Hecho. El {location.name} tiene ahora {fmt_qty(quantity)}.", part_pk, location)
     except InvenTreeError:
         return OpResult(MAYBE_STOCK if writes.started else DOWN_PHRASE)
