@@ -250,3 +250,57 @@ def test_cli_missing_env_values_fail_cleanly(tmp_path, capsys):
     env.write_text("INVENTREE_URL=https://inv.example\n", encoding="utf-8")
     assert gm.main(["--env", str(env), "--template", str(TEMPLATE_PATH), "--out", str(tmp_path / "m.json")]) == 1
     assert "INVENTREE_TOKEN" in capsys.readouterr().err
+
+
+# ---- Final review I5: orders without a quantity must have sample utterances
+
+def test_orders_without_a_quantity_have_their_own_utterances(template):
+    samples = {n: i["samples"] for n, i in intents(template).items()}
+    assert "añade {producto}" in samples["AnadirInventarioIntent"]
+    assert "resta {producto}" in samples["RestarInventarioIntent"] and "quita {producto}" in samples["RestarInventarioIntent"]
+    assert "he cogido {producto}" in samples["RestarInventarioIntent"]
+    assert "actualiza {producto}" in samples["ActualizarInventarioIntent"]
+
+
+def test_taking_without_naming_the_part_is_reachable(template):
+    """The "he cogido 3" flow: the part comes from the context, so the utterance has a quantity and no part."""
+    restar = intents(template)["RestarInventarioIntent"]
+    assert "he cogido {cantidad}" in restar["samples"]
+    assert "he cogido {uno}" in restar["samples"]
+
+
+def test_no_new_utterance_collides_with_an_answer_intent(template):
+    answers = set()
+    for name in ("RespuestaCajonIntent", "RespuestaCantidadIntent", "RespuestaPiezaIntent"):
+        answers |= set(intents(template)[name]["samples"])
+    for name in ("AnadirInventarioIntent", "RestarInventarioIntent", "ActualizarInventarioIntent"):
+        assert not (set(intents(template)[name]["samples"]) & answers)
+
+
+def test_unos_unas_are_understood_as_one_quantity(template):
+    model, _ = gm.build_model(template, PARTS, [])
+    unos = next(t for t in lm(model)["types"] if t["name"] == "UnoUna")["values"]
+    spoken = {v["name"]["value"] for v in unos}
+    assert {"un", "una"} <= spoken
+
+
+# ---- Final review I6: the token never travels over plain http
+
+def test_pagination_next_link_cannot_downgrade_to_http():
+    pages = [
+        ("offset=2", {"results": [{"pk": 3, "name": "C", "keywords": ""}], "next": None}),
+        ("/api/part/", {"results": [{"pk": 1, "name": "A", "keywords": ""}, {"pk": 2, "name": "B", "keywords": ""}],
+                        "next": "http://inv.example/api/part/?limit=2&offset=2"}),  # a proxy that forgot it is behind https
+        ("/api/stock/location/", {"results": []}),
+    ]
+    opener = FakeOpener(pages)
+    parts, _ = gm.fetch_inventory("https://inv.example", "tok", opener=opener)
+    assert [p["pk"] for p in parts] == [1, 2, 3]
+    assert all(url.startswith("https://inv.example") for url, _ in opener.requests)
+    assert not any(url.startswith("http://") for url, _ in opener.requests)
+
+
+def test_pagination_to_another_host_is_refused():
+    pages = [("/api/part/", {"results": [], "next": "https://evil.example/api/part/?offset=2"})]
+    with pytest.raises(RuntimeError):
+        gm.fetch_inventory("https://inv.example", "tok", opener=FakeOpener(pages))

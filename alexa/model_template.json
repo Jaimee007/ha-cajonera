@@ -154,7 +154,18 @@
             "pon {cantidad} {producto} más",
             "pon {uno} {producto} más",
             "que ponga {cantidad} {producto} más",
-            "que ponga {uno} {producto} más"
+            "que ponga {uno} {producto} más",
+            "añade {producto}",
+            "añadir {producto}",
+            "que añada {producto}",
+            "suma {producto}",
+            "agrega {producto}",
+            "mete {producto}",
+            "he metido {producto}",
+            "guarda {producto}",
+            "repón {producto}",
+            "he comprado {producto}",
+            "compré {producto}"
           ]
         },
         {
@@ -227,7 +238,29 @@
             "he cogido {uno} {producto}",
             "me he comido {cantidad} {producto}",
             "me he comido {cantidad} de {producto}",
-            "me he comido {uno} {producto}"
+            "me he comido {uno} {producto}",
+            "resta {producto}",
+            "restar {producto}",
+            "quita {producto}",
+            "quitar {producto}",
+            "elimina {producto}",
+            "saca {producto}",
+            "descuenta {producto}",
+            "gasta {producto}",
+            "he gastado {producto}",
+            "he usado {producto}",
+            "he cogido {producto}",
+            "me he comido {producto}",
+            "he cogido {cantidad}",
+            "he cogido {uno}",
+            "he gastado {cantidad}",
+            "he gastado {uno}",
+            "he usado {cantidad}",
+            "he usado {uno}",
+            "quita {cantidad}",
+            "quita {uno}",
+            "saca {cantidad}",
+            "saca {uno}"
           ]
         },
         {
@@ -272,7 +305,12 @@
             "ajusta {producto} a {cantidad}",
             "establece {producto} en {cantidad}",
             "marca {cantidad} {producto}",
-            "cambia {producto} a {cantidad}"
+            "cambia {producto} a {cantidad}",
+            "actualiza {producto}",
+            "actualizar {producto}",
+            "ajusta {producto}",
+            "fija {producto}",
+            "cambia {producto}"
           ]
         },
         {

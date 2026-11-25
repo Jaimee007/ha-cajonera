@@ -22,6 +22,7 @@ from spoken import drawer_synonyms, number_to_spanish, plural_variants, spoken_f
 WARN_VALUES = 500  # Alexa recognises long lists worse
 MAX_VALUES = 20_000  # a hard limit of the platform
 ROOT_LOCATION = "Cajonera"
+MAX_PAGES = 200  # 20 000 parts at 100 a page: more than Alexa accepts anyway
 USER_AGENT = "MiAtlasModelGenerator/1.0"  # Cloudflare answers 403 to Python's default User-Agent
 
 
@@ -118,6 +119,20 @@ def _get(opener, url: str, headers: dict) -> dict:
     return json.loads(response.data.decode("utf-8"))
 
 
+def _next_url(base: str, link: str | None) -> str | None:
+    """The next page, rebuilt on OUR base URL. A proxy that forgot it sits behind https puts "http://" in the link
+    and the token would cross the network in clear; a link to another host would hand the token to a stranger."""
+    if not link:
+        return None
+    from urllib.parse import urlsplit
+
+    ours, theirs = urlsplit(base), urlsplit(link)
+    if theirs.netloc != ours.netloc:
+        raise RuntimeError("InvenTree sent a pagination link to another host: refusing to follow it with the token")
+    query = f"?{theirs.query}" if theirs.query else ""
+    return f"{base}{theirs.path}{query}"
+
+
 def fetch_inventory(base_url: str, token: str, opener=None) -> tuple[list[dict], list[str]]:
     """Active parts (all pages) and the names of the drawers: the children of the location `Cajonera`."""
     opener = opener or _urlopen
@@ -125,11 +140,15 @@ def fetch_inventory(base_url: str, token: str, opener=None) -> tuple[list[dict],
     headers = {"Authorization": f"Token {token}", "Accept": "application/json", "User-Agent": USER_AGENT}
     parts: list[dict] = []
     url = f"{base}/api/part/?active=true&limit=100"
+    seen: set[str] = set()
     while url:
+        if url in seen or len(seen) >= MAX_PAGES:
+            raise RuntimeError("InvenTree pagination does not end")
+        seen.add(url)
         page = _get(opener, url, headers)
         for row in page.get("results", []):
             parts.append({"pk": row["pk"], "name": row.get("name") or "", "keywords": row.get("keywords") or ""})
-        url = page.get("next")
+        url = _next_url(base, page.get("next"))
     locations = _get(opener, f"{base}/api/stock/location/?limit=500", headers)
     rows = locations.get("results", locations) if isinstance(locations, dict) else locations
     root = next((r["pk"] for r in rows if r.get("name") == ROOT_LOCATION and r.get("parent") is None), None)

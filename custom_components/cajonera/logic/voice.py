@@ -38,6 +38,7 @@ class VoiceResult:
     bajos: set[int] = field(default_factory=set)  # the lit drawers whose part is running low
     confirmar: tuple[int, bool] | None = None  # (address, low) for the confirm flash
     contexto: Context | None = None  # what "he cogido 3" refers to next
+    sustituir_contexto: bool = False  # True: replace the context with `contexto` even when it is None (a search does)
     refrescar_bajo: bool = False  # refresh the low-stock report in the background
 
 
@@ -69,7 +70,7 @@ async def voz_buscar(
         parts = await resolve_parts(api, locations, pieza_pk=pieza_pk, pieza_pks=pieza_pks, texto=texto)
         if not parts:
             if (texto or "").strip() or pieza_pk is not None or pieza_pks:
-                return VoiceResult(NO_MATCH_PHRASE)
+                return VoiceResult(NO_MATCH_PHRASE, sustituir_contexto=True)
             return VoiceResult("¿Qué quieres buscar?")
         outside = await _outside_names(api, parts, locations)
         result = await search_parts_result(api, parts, locations, outside=outside)
@@ -87,6 +88,7 @@ async def voz_buscar(
         iluminar=result.addresses[:MAX_LIT],
         bajos=low,
         contexto=contexto,
+        sustituir_contexto=True,  # every search replaces the context: an older part must never be withdrawn by mistake
         refrescar_bajo=True,
     )
 

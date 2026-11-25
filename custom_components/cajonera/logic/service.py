@@ -411,7 +411,7 @@ class Cajonera:
             self.simulator.search(result.iluminar, set(result.bajos) & set(result.iluminar))
         if result.confirmar is not None:
             self.simulator.confirm(*result.confirmar)
-        if result.contexto is not None:
+        if result.contexto is not None or result.sustituir_contexto:
             self.context = result.contexto
         if result.refrescar_bajo:
             self._spawn(self.refresh_low())

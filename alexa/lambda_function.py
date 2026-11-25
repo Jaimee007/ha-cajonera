@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 import urllib3
 
@@ -32,6 +33,7 @@ DOWN = "No puedo consultar el inventario ahora mismo."
 MAX_FALLOS = 2  # consecutive answers that did not fill the pending question
 MAX_PREGUNTAS = 4  # questions asked for one order
 MAX_OPCIONES = 20  # candidates kept in the session and sent to HA
+MAX_READONLY_PARTS = 5  # parts the read-only fallback checks: each one costs a request
 
 PANEL = "No consigo entenderlo. Hazlo desde el panel de la cajonera."
 
@@ -174,6 +176,7 @@ def _after_ha(answer: dict, request: dict, state: dict | None) -> dict:
         "opciones": list(pregunta.get("opciones") or [])[:MAX_OPCIONES],
         "fallos": (state or {}).get("fallos", 0),
         "preguntas": preguntas,
+        "pregunta": answer.get("frase") or "¿Cómo?",
     }
     return _ask(answer.get("frase") or "¿Cómo?", pending)
 
@@ -212,17 +215,33 @@ def _fill(state: dict, intent_name: str, slots: dict) -> tuple[dict | None, str 
             request.pop("pieza_pks", None)
             request.pop("texto", None)
             return request, None
-        # Still ambiguous: keep only the candidates that survived and ask again.
+        if not offered:
+            # The question had no options (HA did not know the part yet): let HA see every candidate and ask.
+            request["pieza_pks"] = narrowed[:MAX_OPCIONES]
+            request.pop("pieza_pk", None)
+            request.pop("texto", None)
+            return request, None
+        # Still ambiguous among the options offered: keep the survivors and ask again, locally. This is a
+        # question, not a failure (the user did answer).
+        survivors = [o for o in opciones if isinstance(o, dict) and o.get("pieza_pk") in narrowed]
         state["request"] = {**request, "pieza_pks": narrowed}
-        state["opciones"] = [o for o in opciones if isinstance(o, dict) and o.get("pieza_pk") in narrowed]
-        names = [o["nombre"] for o in state["opciones"]]
-        return None, "Sigue habiendo varias: " + ", ".join(names[:3]) + ". ¿Cuál?"
+        state["opciones"] = survivors
+        state["_otra_pregunta"] = True
+        names = [o["nombre"] for o in survivors]
+        if len(names) > 3:
+            names = names[:3] + [f"{len(survivors) - 3} más"]
+        return None, "Sigue habiendo varias: " + _join(names) + ". ¿Cuál?"
     return None, "¿Qué quieres hacer?"
 
 
-def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms: int = 8000) -> dict:
+def _join(items: list) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " y " + items[-1]
+
+
+def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms=8000) -> dict:
     """The whole skill for one Alexa request. `call_ha(payload, timeout)` and `fallback_buscar(request, timeout)`
-    are injected so the logic runs without a network."""
+    are injected so the logic runs without a network. `remaining_ms` is the time Alexa still gives the skill, as an
+    int or as a callable that is read when it matters (after HA failed), not at the start."""
     request_data = event.get("request", {})
     kind = request_data.get("type")
     attrs = (event.get("session") or {}).get("attributes") or {}
@@ -242,14 +261,21 @@ def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms: int = 8000
     name = intent.get("name")
     slots = intent.get("slots") or {}
 
+    pending = attrs.get("pendiente")
+
     if name in ("AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.NoIntent", "AMAZON.NavigateHomeIntent"):
-        return speak("Hasta luego.")
+        return speak("Hasta luego.")  # an explicit wish to stop ends the question too
     if name == "AMAZON.HelpIntent":
-        return speak(
-            "Puedes decir: cuántos huevos quedan, añade seis huevos, he cogido dos tornillos, o actualiza huevos a doce.",
-            end=False,
-        )
+        help_text = "Puedes decir: cuántos huevos quedan, añade seis huevos, he cogido dos tornillos, o actualiza huevos a doce."
+        if pending:  # keep the question: help must not make the user start the order again
+            return _ask(f"{help_text} {pending.get('pregunta') or ''}".strip(), pending)
+        return speak(help_text, end=False)
     if name == "AMAZON.FallbackIntent":
+        if pending:  # the answer was not understood: it counts as a failed one and the question stays
+            fallos = pending.get("fallos", 0) + 1
+            if fallos >= MAX_FALLOS:
+                return speak(PANEL)
+            return _ask(pending.get("pregunta") or "¿Cómo?", {**pending, "fallos": fallos})
         return speak("No te he entendido. Prueba a decir: añade seis huevos o dónde están los tornillos.", end=False)
 
     if name in ORDER_INTENTS:
@@ -262,10 +288,16 @@ def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms: int = 8000
             return speak("¿Qué quieres hacer?", end=False)
         request, reask = _fill(state, name, slots)
         if request is None:
+            if state.pop("_otra_pregunta", False):
+                # Narrowed but still ambiguous: a new question, not a failure.
+                preguntas = state.get("preguntas", 0) + 1
+                if preguntas > MAX_PREGUNTAS:
+                    return speak(PANEL)
+                return _ask(reask, {**state, "preguntas": preguntas, "fallos": 0, "pregunta": reask})
             fallos = state.get("fallos", 0) + 1
             if fallos >= MAX_FALLOS:
                 return speak(PANEL)
-            state = {**state, "fallos": fallos}
+            state = {**state, "fallos": fallos, "pregunta": reask or state.get("pregunta")}
             return _ask(reask or "¿Cómo?", state)
         state = {**state, "fallos": 0}
         return _dispatch(request, state, call_ha, fallback_buscar, remaining_ms)
@@ -282,13 +314,15 @@ def _dispatch(request: dict, state: dict | None, call_ha, fallback_buscar, remai
     return _after_ha(answer, request, state)
 
 
-def _on_ha_error(err: HAError, request: dict, fallback_buscar, remaining_ms: int) -> dict:
+def _on_ha_error(err: HAError, request: dict, fallback_buscar, remaining_ms) -> dict:
     """HA did not answer. A search is answered read-only from InvenTree; a write says honestly what may have happened,
     and never keeps a pending question."""
     if request.get("accion") == "buscar":
-        left = remaining_ms / 1000.0 - HA_TIMEOUT - 1.0  # what the 8 s budget has left, minus a 1 s margin
+        left = (remaining_ms() if callable(remaining_ms) else remaining_ms) / 1000.0 - 1.0  # time left now, minus a 1 s margin
+        if left < 0.5:
+            return speak(DOWN)  # no time to look: answer something rather than let Alexa time out
         try:
-            return speak(fallback_buscar(request, max(0.5, left)))
+            return speak(fallback_buscar(request, left))
         except RuntimeError:
             return speak(DOWN)
     return speak(MAYBE_WRITTEN if err.sent else NOT_WRITTEN)
@@ -313,7 +347,7 @@ def ha_call(payload: dict, timeout: float) -> dict:
                 "Content-Type": "application/json",
                 "User-Agent": USER_AGENT,
             },
-            timeout=urllib3.Timeout(connect=2.0, read=timeout),
+            timeout=urllib3.Timeout(total=timeout),  # connect and read share ONE budget, so HA can never take 2 + 4 s
             retries=False,
         )
     except (urllib3.exceptions.ConnectTimeoutError, urllib3.exceptions.NewConnectionError):
@@ -371,8 +405,12 @@ def inventree_readonly(request: dict, timeout: float) -> str:
     else:
         pks = []
     drawers: list = []
-    for pk in pks:
-        for item in _rows(_inventree(f"/api/stock/?part={pk}&location_detail=true&limit=50", timeout)):
+    deadline = time.monotonic() + timeout
+    for pk in pks[:MAX_READONLY_PARTS]:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise RuntimeError("read-only lookup ran out of time")
+        for item in _rows(_inventree(f"/api/stock/?part={pk}&location_detail=true&limit=50", left)):
             name = (item.get("location_detail") or {}).get("name")
             if name and float(item.get("quantity") or 0) > 0 and name not in drawers:
                 drawers.append(name)
@@ -386,7 +424,7 @@ def lambda_handler(event, context):
     """AWS entry point."""
     request = event.get("request", {})
     intent = (request.get("intent") or {})
-    remaining = context.get_remaining_time_in_millis() if context is not None else 8000
+    remaining = (lambda: context.get_remaining_time_in_millis()) if context is not None else (lambda: 8000)
     try:
         response = handle_event(event, ha_call, inventree_readonly, remaining_ms=remaining)
         outcome = "ok"

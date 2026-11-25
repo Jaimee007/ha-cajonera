@@ -226,3 +226,62 @@ def test_the_fifth_question_is_never_asked():
         if is_open(r):
             asked += 1
     assert asked == MAX_PREGUNTAS and text_of(r) == PANEL
+
+
+# ---- Final review I3: Help and Fallback do not throw a pending question away
+
+def test_help_and_fallback_keep_the_pending_question():
+    ha = FakeHA(asks("pieza", "¿De qué producto?"))
+    first = run(intent_event("AnadirInventarioIntent", {"cantidad": number(3)}), ha)
+    pending = first["sessionAttributes"]["pendiente"]
+    for name in ("AMAZON.HelpIntent", "AMAZON.FallbackIntent"):
+        r = run(intent_event(name, attrs=first["sessionAttributes"]), ha)
+        assert is_open(r) and r["sessionAttributes"]["pendiente"]["falta"] == "pieza"
+        assert "¿De qué producto?" in text_of(r)
+    assert pending["fallos"] == 0
+
+
+def test_fallback_counts_as_a_failed_answer_and_ends_at_the_limit():
+    ha = FakeHA(asks("cantidad", "¿Cuántos?", pieza_pk=5))
+    r = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5])}), ha)
+    for _ in range(MAX_FALLOS - 1):
+        r = run(intent_event("AMAZON.FallbackIntent", attrs=r["sessionAttributes"]), ha)
+        assert is_open(r)
+    r = run(intent_event("AMAZON.FallbackIntent", attrs=r["sessionAttributes"]), ha)
+    assert text_of(r) == PANEL and not is_open(r)
+
+
+def test_stop_cancel_and_no_still_end_a_pending_question():
+    ha = FakeHA(asks("cantidad", "¿Cuántos?", pieza_pk=5))
+    first = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5])}), ha)
+    for name in ("AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.NoIntent"):
+        r = run(intent_event(name, attrs=first["sessionAttributes"]), ha)
+        assert not is_open(r) and "sessionAttributes" not in r
+
+
+def test_help_without_a_pending_question_is_unchanged():
+    r = run(intent_event("AMAZON.HelpIntent"), FakeHA(done()))
+    assert is_open(r) and "sessionAttributes" not in r
+
+
+# ---- Final review I4: a part question with no options and an ambiguous answer
+
+def test_ambiguous_answer_to_an_open_part_question_asks_ha_with_the_candidates():
+    ha = FakeHA(asks("pieza", "¿De qué producto?"), asks("pieza", "Hay A y B. ¿Cuál?", opciones=[
+        {"pieza_pk": 5, "nombre": "A"}, {"pieza_pk": 6, "nombre": "B"}]))
+    first = run(intent_event("AnadirInventarioIntent", {"cantidad": number(3)}), ha)
+    r = run(intent_event("RespuestaPiezaIntent", {"producto": slot("producto", "tornillos", [5, 6])}, attrs=first["sessionAttributes"]), ha)
+    assert ha.calls[1] == {"accion": "anadir", "cantidad": 3.0, "pieza_pks": [5, 6]}
+    assert text_of(r) == "Hay A y B. ¿Cuál?" and r["sessionAttributes"]["pendiente"]["fallos"] == 0
+
+
+def test_still_ambiguous_after_narrowing_is_a_question_not_a_failure():
+    """The executor's Task 5 ruling: counted as a question; never "Sigue habiendo varias: ."."""
+    opciones = [{"pieza_pk": 5, "nombre": "Tornillo M3x8"}, {"pieza_pk": 6, "nombre": "Tornillo M3x12"}, {"pieza_pk": 7, "nombre": "Tornillo M4"}]
+    ha = FakeHA(asks("pieza", "Hay tres. ¿Cuál?", opciones=opciones))
+    first = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "tornillos", [5, 6, 7]), "cantidad": number(2)}), ha)
+    r = run(intent_event("RespuestaPiezaIntent", {"producto": slot("producto", "m tres", [5, 6, 99])}, attrs=first["sessionAttributes"]), ha)
+    st = r["sessionAttributes"]["pendiente"]
+    assert st["fallos"] == 0 and st["preguntas"] == 2
+    assert "Tornillo M3x8" in text_of(r) and "Tornillo M3x12" in text_of(r) and "Tornillo M4" not in text_of(r)
+    assert ": ." not in text_of(r)

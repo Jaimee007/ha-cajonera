@@ -701,3 +701,36 @@ async def test_voz_refreshes_low_stock_after_a_write():
     await caj.voz("retirar", pieza_pk=5, cantidad=5)
     await caj.drain()
     assert [lp.part.name for lp in caj.low.parts] == ["Huevos"]
+
+
+async def test_voz_search_that_points_to_no_single_part_clears_the_context():
+    """Final review I1 (the card's C2): an older part must never be withdrawn after a search that found something else."""
+    fake = FakeInventory(
+        [Part(5, "Tornillo M3x8", 0.0, 40.0), Part(6, "Resistencia 1k", 0.0, 5.0), Part(7, "Resistencia 10k", 0.0, 5.0)],
+        [StockItem(9, 5, "", 40.0, 1001), StockItem(10, 6, "", 5.0, 1002), StockItem(11, 7, "", 5.0, 1002)], [])
+    caj = make(fake)
+    await caj.voz("buscar", pieza_pk=5)
+    assert caj.context is not None and caj.context.part_pk == 5
+    await caj.voz("buscar", pieza_pks=[6, 7])
+    assert caj.context is None
+    r = await caj.voz("retirar", cantidad=3)
+    assert r["frase"] == "¿Qué has cogido?" and fake.removed == []
+
+
+async def test_voz_search_with_no_match_clears_the_context():
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0.0, 40.0)], [StockItem(9, 5, "", 40.0, 1001)], [])
+    caj = make(fake)
+    await caj.voz("buscar", pieza_pk=5)
+    r = await caj.voz("buscar", texto="arandela")
+    assert r["frase"] == "No encuentro nada con ese nombre." and caj.context is None
+
+
+async def test_voz_failed_search_keeps_the_context():
+    """If InvenTree is down we do not know what the user meant: keep what was there, it expires on its own."""
+    fake = FakeInventory([Part(5, "Tornillo M3x8", 0.0, 40.0)], [StockItem(9, 5, "", 40.0, 1001)], [])
+    caj = make(fake)
+    await caj.voz("buscar", pieza_pk=5)
+    before = caj.context
+    fake.fail_on = {"get_part"}
+    await caj.voz("buscar", pieza_pk=5)
+    assert caj.context == before

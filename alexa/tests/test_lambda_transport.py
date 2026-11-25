@@ -139,10 +139,11 @@ def test_fallback_deadline_uses_remaining_time():
         seen["timeout"] = timeout
         return "x"
 
+    # remaining_ms is what Alexa still gives the skill WHEN HA has failed: 1 s is kept as a margin
     lf.handle_event(SEARCH, FakeHA(lf.HAError("x", sent=True)), fallback, remaining_ms=8000)
-    assert seen["timeout"] == pytest.approx(3.0)  # 8 s - 4 s for HA - 1 s margin
-    lf.handle_event(SEARCH, FakeHA(lf.HAError("x", sent=True)), fallback, remaining_ms=5000)
-    assert seen["timeout"] == pytest.approx(0.5)  # never below half a second
+    assert seen["timeout"] == pytest.approx(7.0)
+    lf.handle_event(SEARCH, FakeHA(lf.HAError("x", sent=True)), fallback, remaining_ms=3000)
+    assert seen["timeout"] == pytest.approx(2.0)
 
 
 def test_fallback_failure_says_down():
@@ -282,3 +283,75 @@ def test_unexpected_error_logs_only_the_exception_type(monkeypatch, caplog):
     assert text_of(r) == "Ha ocurrido un error. Inténtalo de nuevo."
     assert "ValueError" in caplog.text
     assert "HA-SECRET-TOKEN" not in caplog.text and "token=ABC" not in caplog.text
+
+
+# ---- Final review I2: the 8 s budget is enforced where it is spent
+
+def test_ha_call_uses_a_total_budget_not_connect_plus_read(monkeypatch):
+    http = use_http(monkeypatch, FakeHttp(FakeResponse(200, ENVELOPE)))
+    lf.ha_call({"accion": "buscar"}, 4.0)
+    timeout = http.requests[0][2]["timeout"]
+    assert timeout.total == 4.0  # one budget for connect AND read: HA can never take 2 s + 4 s
+
+
+def test_fallback_deadline_is_computed_after_the_ha_call_fails():
+    """The time left is read when HA has failed, not at the start: it is a callable the Lambda re-reads."""
+    clock = {"left": 8000}
+    seen = {}
+
+    def slow_ha(payload, timeout):
+        clock["left"] = 3200  # HA hung for 4.8 s
+        raise lf.HAError("slow", sent=True)
+
+    def fallback(request, timeout):
+        seen["timeout"] = timeout
+        return "x"
+
+    lf.handle_event(SEARCH, slow_ha, fallback, remaining_ms=lambda: clock["left"])
+    assert seen["timeout"] == pytest.approx(2.2)  # 3.2 s were left when HA failed, minus the 1 s margin
+    lf.handle_event(SEARCH, slow_ha_with(clock, 6000), fallback, remaining_ms=lambda: clock["left"])
+    assert seen["timeout"] == pytest.approx(5.0)
+
+
+def slow_ha_with(clock, left):
+    def call(payload, timeout):
+        clock["left"] = left
+        raise lf.HAError("x", sent=True)
+
+    return call
+
+
+def test_fallback_gives_up_when_there_is_no_time_left():
+    def fallback(request, timeout):
+        raise AssertionError("must not be called with no time")
+
+    r = lf.handle_event(SEARCH, slow_ha_with({"left": 0}, 900), fallback, remaining_ms=lambda: 900)
+    assert text_of(r) == DOWN and not is_open(r)
+
+
+def test_readonly_lookup_caps_the_parts_it_checks(monkeypatch):
+    calls = []
+
+    class Http(FakeHttp):
+        def request(self, method, url, **kw):
+            calls.append(url)
+            return FakeResponse(200, {"results": []})
+
+    use_http(monkeypatch, Http(FakeResponse(200, {})))
+    lf.inventree_readonly({"accion": "buscar", "pieza_pks": list(range(1, 21))}, 3.0)
+    assert len(calls) <= lf.MAX_READONLY_PARTS
+
+
+def test_readonly_lookup_respects_its_own_deadline(monkeypatch):
+    import time
+
+    class Slow(FakeHttp):
+        def request(self, method, url, **kw):
+            time.sleep(0.3)
+            return FakeResponse(200, {"results": [{"pk": 9, "quantity": 1, "location": 1, "location_detail": {"name": "B1"}}]})
+
+    use_http(monkeypatch, Slow(FakeResponse(200, {})))
+    started = time.monotonic()
+    with pytest.raises(RuntimeError):  # it stops when its budget is spent instead of asking for every part
+        lf.inventree_readonly({"accion": "buscar", "pieza_pks": [1, 2, 3, 4, 5]}, 0.5)
+    assert time.monotonic() - started < 1.2  # near its budget, not 5 x its timeout
