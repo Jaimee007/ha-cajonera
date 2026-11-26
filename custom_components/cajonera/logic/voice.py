@@ -11,6 +11,7 @@ from datetime import datetime
 
 from .inventree import InvenTreeError
 from .models import Location, Part
+from .names import narrow_by_text, parts_named
 from .phrases import fmt_qty, join_es
 from .stock_ops import add_to_drawer, count_drawer
 from .search import DOWN_PHRASE, MAX_LIT, NO_MATCH_PHRASE, is_unplaced, search_parts_result
@@ -51,8 +52,43 @@ async def resolve_parts(
     if pieza_pks:
         return [await api.get_part(pk) for pk in pieza_pks[:MAX_CANDIDATES]]
     if (texto or "").strip():
-        return await candidate_parts(api, texto.strip(), locations)
+        found = await candidate_parts(api, texto.strip(), locations)
+        if found:
+            return found
+        return await _by_spoken_form(api, texto.strip(), locations)
     return []
+
+
+async def _by_spoken_form(api, texto: str, locations: dict[int, Location]) -> list[Part]:
+    """InvenTree's search knows "M3x8", not "m tres por ocho": search by the first word and compare spoken forms."""
+    first = next((w for w in texto.lower().split() if len(w) >= 3 and w not in _SPOKEN_FILLER), "")
+    pool: list[Part] = []
+    if first:
+        # "tornillos" is not inside "Tornillo M3x8": look for the word as said and without its plural "s".
+        for word in dict.fromkeys([first, first[:-1] if first.endswith("s") and len(first) > 3 else first]):
+            for found in await api.search_parts(word, limit=50):
+                if all(found.pk != known.pk for known in pool):
+                    pool.append(found)
+    if not pool:
+        # Nothing to ask InvenTree with ("m tres x ocho"): compare against the parts that are in the cabinet.
+        pool = await _cabinet_parts(api, locations)
+    narrowed = parts_named(pool, texto)
+    # Only the generic word matched everything: that is not a name, so there is no single answer to give here.
+    return [] if len(narrowed) == len(pool) and len(pool) > 1 else narrowed
+
+
+_SPOKEN_FILLER = {"por", "equis", "eme", "ene", "los", "las", "del", "con", "uno", "una", "dos", "tres", "cuatro", "cinco",
+                  "seis", "siete", "ocho", "nueve", "diez"}
+
+
+async def _cabinet_parts(api, locations: dict[int, Location]) -> list[Part]:
+    """Every part that has stock in a cabinet drawer (a few hundred at most), for a name with no searchable word."""
+    parts: dict[int, Part] = {}
+    for location in locations.values():
+        for item in await api.stock_in_location(location.pk):
+            if item.part_pk not in parts:
+                parts[item.part_pk] = await api.get_part(item.part_pk)
+    return list(parts.values())
 
 
 async def voz_buscar(
@@ -174,6 +210,9 @@ async def _plan(api, locations, context, now, accion, pieza_pk, pieza_pks, texto
     if pieza_pk is None and not pieza_pks and not (texto or "").strip() and accion == "retirar" and fresh:
         pieza_pk = fresh.part_pk
     parts = await resolve_parts(api, locations, pieza_pk=pieza_pk, pieza_pks=pieza_pks, texto=texto)
+    if len(parts) > 1 and pieza_pks:
+        # Alexa resolved a shared word to several parts; the words said ("tornillos M3X8") say which one.
+        parts = narrow_by_text(parts, texto)
     if not parts:
         if (texto or "").strip() or pieza_pk is not None or pieza_pks:
             return VoiceResult(NO_MATCH_PHRASE)

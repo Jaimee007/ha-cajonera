@@ -26,7 +26,7 @@ def test_resolve_producto_one_id():
 
 
 def test_resolve_producto_several_ids_flattened_and_deduplicated():
-    assert resolve_producto(slot("producto", "tornillos", [5, 6, 5, 7])) == {"pieza_pks": [5, 6, 7]}
+    assert resolve_producto(slot("producto", "tornillos", [5, 6, 5, 7])) == {"pieza_pks": [5, 6, 7], "texto": "tornillos"}
 
 
 def test_resolve_producto_caps_candidates_at_twenty():
@@ -75,7 +75,7 @@ def test_add_with_uno_sends_uno_and_no_cantidad():
 def test_add_without_either_sends_neither():
     """Review Focus 1: the Lambda never invents a quantity."""
     req = build_request("AnadirInventarioIntent", {"producto": slot("producto", "tornillos", [5, 6])})
-    assert req == {"accion": "anadir", "pieza_pks": [5, 6]}
+    assert req == {"accion": "anadir", "pieza_pks": [5, 6], "texto": "tornillos"}
     assert "cantidad" not in req and "uno" not in req
 
 
@@ -285,3 +285,24 @@ def test_still_ambiguous_after_narrowing_is_a_question_not_a_failure():
     assert st["fallos"] == 0 and st["preguntas"] == 2
     assert "Tornillo M3x8" in text_of(r) and "Tornillo M3x12" in text_of(r) and "Tornillo M4" not in text_of(r)
     assert ": ." not in text_of(r)
+
+
+# ---- The words the user said travel with the candidates Alexa resolved
+
+def test_resolved_candidates_carry_the_spoken_text():
+    """Alexa resolves "tornillos M3X8" to four screws; HA needs the words to pick the right one."""
+    req = build_request("AnadirInventarioIntent", {"producto": slot("producto", "tornillos M3X8", [13, 14, 15, 2]), "cantidad": number(3)})
+    assert req == {"accion": "anadir", "pieza_pks": [13, 14, 15, 2], "texto": "tornillos M3X8", "cantidad": 3.0}
+
+
+def test_one_resolved_part_does_not_need_the_text():
+    req = build_request("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5]), "cantidad": number(3)})
+    assert req == {"accion": "anadir", "pieza_pk": 5, "cantidad": 3.0}
+
+
+def test_text_survives_the_questions_so_the_answer_can_still_be_narrowed():
+    ha = FakeHA(asks("cantidad", "¿Cuántos?", pieza_pk=13))
+    r = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "tornillos M3X8", [13, 14, 15, 2])}), ha)
+    assert ha.calls[0]["texto"] == "tornillos M3X8"
+    assert r["sessionAttributes"]["pendiente"]["request"]["pieza_pk"] == 13  # HA resolved it: the candidates are dropped
+    assert "pieza_pks" not in r["sessionAttributes"]["pendiente"]["request"]
