@@ -93,11 +93,16 @@ def resolve_producto(slot: dict | None) -> dict:
             continue
         if number not in ids:
             ids.append(number)
+    value = ((slot or {}).get("value") or "").strip()
     if len(ids) == 1:
         return {"pieza_pk": ids[0]}
     if ids:
-        return {"pieza_pks": ids[:MAX_OPCIONES]}
-    value = ((slot or {}).get("value") or "").strip()
+        # A shared word ("tornillos") resolves to several parts; the words the user said ("tornillos M3X8")
+        # travel with them so Home Assistant can pick the one that was named.
+        found = {"pieza_pks": ids[:MAX_OPCIONES]}
+        if value:
+            found["texto"] = value
+        return found
     return {"texto": value} if value else {}
 
 

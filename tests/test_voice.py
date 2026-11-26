@@ -331,3 +331,49 @@ async def test_buscar_via_voz_matches_voz_buscar():
 async def test_unknown_action_is_refused_politely():
     r = await run(huevos(12), accion="borrar", pieza_pk=5)
     assert not r.hecho and r.frase == "No sé hacer eso."
+
+
+# ---- Spoken names: Alexa returns several candidates for a shared word, HA picks by what was said
+
+async def test_candidates_are_narrowed_by_the_spoken_text():
+    """The real case: "tornillos M3X8" -> Alexa returns four screws; the text says which."""
+    parts = [part(13, "Tornillo M3x8", 120), part(14, "Tornillo M3x12", 80), part(15, "Tornillo M4x10", 60), part(2, "tornillo m3", 40)]
+    stock = [item(30 + i, p.pk, 5, 11) for i, p in enumerate(parts)]
+    fake = inv(parts, stock)
+    r = await plan(fake, pieza_pks=[13, 14, 15, 2], texto="tornillos M3X8", cantidad=3)
+    assert isinstance(r, Listo) and r.part.pk == 13 and r.location.name == "B1"
+
+
+async def test_candidates_without_a_distinguishing_text_still_ask():
+    parts = [part(13, "Tornillo M3x8", 120), part(14, "Tornillo M3x12", 80)]
+    fake = inv(parts, [item(30, 13, 5, 11), item(31, 14, 5, 11)])
+    r = await plan(fake, pieza_pks=[13, 14], texto="tornillos", cantidad=3)
+    assert r.pregunta.falta == "pieza" and len(r.pregunta.opciones) == 2
+
+
+async def test_candidates_with_a_text_that_matches_none_still_ask_among_all():
+    parts = [part(13, "Tornillo M3x8", 120), part(14, "Tornillo M3x12", 80)]
+    fake = inv(parts, [item(30, 13, 5, 11), item(31, 14, 5, 11)])
+    r = await plan(fake, pieza_pks=[13, 14], texto="arandelas", cantidad=3)
+    assert r.pregunta.falta == "pieza" and len(r.pregunta.opciones) == 2
+
+
+async def test_buscar_with_candidates_searches_all_even_with_a_text():
+    """A search shows everything the shared word covers; only the writes narrow."""
+    parts = [part(13, "Tornillo M3x8", 120), part(14, "Tornillo M3x12", 80)]
+    fake = inv(parts, [item(30, 13, 5, 11), item(31, 14, 5, 12)])
+    r = await voz_buscar(fake, LOCS, None, NOW, pieza_pks=[13, 14], texto="tornillos M3X8")
+    assert sorted(r.iluminar) == [17, 18]
+
+
+async def test_text_search_understands_numbers_said_in_words():
+    fake = inv([part(13, "Tornillo M3x8", 120), part(14, "Tornillo M3x12", 80)], [item(30, 13, 5, 11), item(31, 14, 5, 11)])
+    for spoken in ("tornillo m tres por ocho", "tornillos eme tres equis ocho", "m tres x ocho"):
+        r = await plan(fake, texto=spoken, cantidad=1)
+        assert isinstance(r, Listo) and r.part.pk == 13, spoken
+
+
+async def test_text_search_with_a_resistor_said_in_words():
+    fake = inv([part(6, "Resistencia 4k7", 60), part(7, "Resistencia 10k", 100)], [item(30, 6, 5, 11), item(31, 7, 5, 11)])
+    r = await plan(fake, texto="resistencia cuatro k siete", cantidad=1)
+    assert isinstance(r, Listo) and r.part.pk == 6
