@@ -194,7 +194,7 @@ def test_answer_without_pending_state_asks_what_to_do():
 
 def test_launch_help_stop_fallback_wording():
     ha = FakeHA(done())
-    assert text_of(run(launch_event(), ha)).startswith("Bienvenido al inventario.") and is_open(run(launch_event(), ha))
+    assert text_of(run(launch_event(), ha)) == "Dime." and is_open(run(launch_event(), ha))
     assert run(ended_event(), ha) == {"version": "1.0"}
     for name in ("AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.NoIntent", "AMAZON.NavigateHomeIntent"):
         r = run(intent_event(name), ha)
@@ -214,6 +214,39 @@ def test_every_open_response_has_a_reprompt():
     ]
     for r in responses:
         assert is_open(r) and r["response"]["reprompt"]["outputSpeech"]["text"]
+
+
+# ---- An opened skill ("abre mi atlas") keeps listening; a one-breath order ends
+
+def test_launch_is_short_and_marks_the_session_as_opened():
+    r = run(launch_event(), FakeHA(done()))
+    assert text_of(r) == "Dime." and is_open(r) and r["sessionAttributes"] == {"abierta": True}
+
+
+def test_opened_session_stays_open_after_an_answer():
+    ha = FakeHA(done("Hecho. He añadido 3."))
+    r = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5]), "cantidad": number(3)}, attrs={"abierta": True}), ha)
+    assert text_of(r) == "Hecho. He añadido 3." and is_open(r)
+    assert r["response"]["reprompt"]["outputSpeech"]["text"] == "¿Algo más?"
+    assert r["sessionAttributes"] == {"abierta": True}
+
+
+def test_opened_session_keeps_a_pending_question_and_the_flag():
+    ha = FakeHA(asks("cantidad", "¿Cuántos?", pieza_pk=5))
+    r = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5])}, attrs={"abierta": True}), ha)
+    assert is_open(r) and r["sessionAttributes"]["abierta"] is True and r["sessionAttributes"]["pendiente"]["falta"] == "cantidad"
+
+
+def test_opened_session_ends_on_stop_and_on_the_panel_handoff():
+    r = run(intent_event("AMAZON.StopIntent", attrs={"abierta": True}), FakeHA(done()))
+    assert text_of(r) == "Hasta luego." and not is_open(r)
+    r = run(intent_event("AMAZON.NoIntent", attrs={"abierta": True}), FakeHA(done()))
+    assert not is_open(r)
+
+
+def test_one_breath_order_still_ends_the_session():
+    r = run(intent_event("AnadirInventarioIntent", {"producto": slot("producto", "huevos", [5]), "cantidad": number(3)}), FakeHA(done()))
+    assert not is_open(r) and "sessionAttributes" not in r
 
 
 def test_the_fifth_question_is_never_asked():
