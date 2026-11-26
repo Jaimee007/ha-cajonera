@@ -243,20 +243,40 @@ def _join(items: list) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " y " + items[-1]
 
 
+ENDING_INTENTS = ("AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.NoIntent", "AMAZON.NavigateHomeIntent")
+MORE = "¿Algo más?"  # reprompt after an order in an opened session: short, so waiting feels natural
+
+
 def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms=8000) -> dict:
     """The whole skill for one Alexa request. `call_ha(payload, timeout)` and `fallback_buscar(request, timeout)`
     are injected so the logic runs without a network. `remaining_ms` is the time Alexa still gives the skill, as an
-    int or as a callable that is read when it matters (after HA failed), not at the start."""
+    int or as a callable that is read when it matters (after HA failed), not at the start.
+
+    A skill that was OPENED ("abre mi atlas") stays listening after each answer, so several orders can follow;
+    one asked in a single breath ("dile a mi atlas que añada...") answers and ends."""
+    response = _handle(event, call_ha, fallback_buscar, remaining_ms)
+    request_data = event.get("request", {})
+    attrs = (event.get("session") or {}).get("attributes") or {}
+    if request_data.get("type") != "IntentRequest" or not attrs.get("abierta"):
+        return response
+    inner = response.get("response") or {}
+    if (request_data.get("intent") or {}).get("name") in ENDING_INTENTS or (inner.get("outputSpeech") or {}).get("text") == PANEL:
+        return response  # an explicit "no" / "para", or the hand-off to the panel, closes the skill
+    out = dict(response)
+    out["sessionAttributes"] = {**(response.get("sessionAttributes") or {}), "abierta": True}
+    if inner.get("shouldEndSession"):
+        out["response"] = {**inner, "shouldEndSession": False, "reprompt": {"outputSpeech": {"type": "PlainText", "text": MORE}}}
+    return out
+
+
+def _handle(event: dict, call_ha, fallback_buscar, remaining_ms) -> dict:
     request_data = event.get("request", {})
     kind = request_data.get("type")
     attrs = (event.get("session") or {}).get("attributes") or {}
 
     if kind == "LaunchRequest":
-        return speak(
-            "Bienvenido al inventario. ¿Qué quieres consultar o modificar?",
-            end=False,
-            reprompt="Dime qué producto quieres consultar o modificar.",
-        )
+        # No welcome speech: just the cue that it is listening. It stays open for the orders that follow.
+        return speak("Dime.", end=False, reprompt="¿Qué necesitas?", attrs={"abierta": True})
     if kind == "SessionEndedRequest":
         return {"version": "1.0"}
     if kind != "IntentRequest":
@@ -268,7 +288,7 @@ def handle_event(event: dict, call_ha, fallback_buscar, remaining_ms=8000) -> di
 
     pending = attrs.get("pendiente")
 
-    if name in ("AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.NoIntent", "AMAZON.NavigateHomeIntent"):
+    if name in ENDING_INTENTS:
         return speak("Hasta luego.")  # an explicit wish to stop ends the question too
     if name == "AMAZON.HelpIntent":
         help_text = "Puedes decir: cuántos huevos quedan, añade seis huevos, he cogido dos tornillos, o actualiza huevos a doce."

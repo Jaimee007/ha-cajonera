@@ -191,10 +191,17 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
 
     async def voz(call: ServiceCall) -> ServiceResponse:
         d = call.data
-        return await cajonera.voz(
+        answer = await cajonera.voz(
             d["accion"], d.get("pieza_pk"), d.get("pieza_pks"), d.get("texto"), d.get("cantidad"), d.get("cajon"),
             bool(d.get("uno", False)),
         )
+        # One Logbook line per voice order (see logbook.py): what was asked and what Alexa was told.
+        hass.bus.async_fire("cajonera_orden", {
+            "accion": d["accion"], "texto": d.get("texto"), "pieza_pk": d.get("pieza_pk"),
+            "cantidad": d.get("cantidad"), "cajon": d.get("cajon"),
+            "frase": answer.get("frase"), "hecho": bool(answer.get("hecho")),
+        })
+        return answer
 
     async def guardar_apagar(call: ServiceCall) -> None:
         cajonera.guardar_apagar()
