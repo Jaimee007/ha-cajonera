@@ -86,6 +86,30 @@ The skill "mi atlas" can search, add, withdraw and count by voice with the same 
 `cajonera.voz` service. The Lambda, the interaction-model generator and the steps to deploy them are in
 [alexa/README.md](alexa/README.md).
 
+### Saying card changes aloud on an Echo
+
+Every voice order and every stock change made by hand on the card fires a `cajonera_orden` event (they also show in
+the Logbook). Those from the card have `origen: panel` and a `frase` ready to be spoken ("He retirado 4 de Tornillo
+M3x8 del B3. Quedan 113."). With the Alexa Media Player integration, an automation can repeat them:
+
+```yaml
+alias: Cajonera - repetir acción de la tarjeta
+triggers:
+  - trigger: event
+    event_type: cajonera_orden
+    event_data:
+      origen: panel
+      hecho: true
+actions:
+  - action: notify.alexa_media_echo_dot_max_de_jaime
+    data:
+      message: "{{ trigger.event.data.frase }}"
+      data:
+        type: tts
+```
+
+Orders made by voice (`origen: voz`) are not repeated: Alexa already answered them.
+
 ## Development
 
 ```
