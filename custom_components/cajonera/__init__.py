@@ -10,6 +10,7 @@ See docs/09_gestion_inventario.md.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 from pathlib import Path
 
@@ -31,6 +32,8 @@ from .logic.inventree import InvenTreeClient
 from .logic.models import Drawer
 from .logic.service import Cajonera
 from .logic.simulator import DrawerSimulator
+
+_LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "cajonera"
 SIGNAL_UPDATE = f"{DOMAIN}_update"
@@ -194,6 +197,12 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         answer = await cajonera.voz(
             d["accion"], d.get("pieza_pk"), d.get("pieza_pks"), d.get("texto"), d.get("cantidad"), d.get("cajon"),
             bool(d.get("uno", False)),
+        )
+        # Info level: shown in Settings > System > Logs only with `logger: logs: custom_components.cajonera: info`.
+        _LOGGER.info(
+            "voz accion=%s pieza_pk=%s pieza_pks=%s texto=%r cantidad=%s cajon=%s -> hecho=%s frase=%r",
+            d["accion"], d.get("pieza_pk"), d.get("pieza_pks"), d.get("texto"), d.get("cantidad"), d.get("cajon"),
+            bool(answer.get("hecho")), answer.get("frase"),
         )
         # One Logbook line per voice order (see logbook.py): what was asked and what Alexa was told.
         hass.bus.async_fire("cajonera_orden", {
