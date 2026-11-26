@@ -22,6 +22,7 @@ from .catalog import (
     suggest,
     suggest_drawer,
 )
+from .announce import spoken_action
 from .context import context_after_search
 from .inventree import InvenTreeError
 from .low_stock import LowStockReport, low_stock_report
@@ -49,6 +50,7 @@ class Cajonera:
         now: Callable[[], datetime] = datetime.now,
         on_notices: Callable[[list[str]], None] | None = None,
         on_change: Callable[[], None] | None = None,
+        on_announce: Callable[[dict], None] | None = None,
     ):
         self.api = api
         self.simulator = simulator
@@ -56,6 +58,8 @@ class Cajonera:
         self.now = now
         self.on_notices = on_notices or (lambda notices: None)
         self.on_change = on_change or (lambda: None)
+        # Called with a sentence ready to be spoken whenever stock is changed by hand (the card), never by voice.
+        self.on_announce = on_announce or (lambda data: None)
         self.root_pk: int | None = None
         self.locations: dict[int, Location] = {}
         self.synced = False  # locations match the drawers and are loaded
@@ -229,7 +233,23 @@ class Cajonera:
             if result.address is not None:
                 self.simulator.confirm(result.address, result.low)
             self._spawn(self.refresh_low())
+            if result.context is not None:
+                self._announce("retirar", result.context.part_pk, result.context.location_pk, cantidad, result.phrase)
         return {"frase": result.phrase, "hecho": result.done}
+
+    def _announce(self, accion: str, part_pk: int, location_pk: int | None, quantity: float | None, phrase: str) -> None:
+        """Say what was just done by hand. Best effort and in the background: it never delays or fails the order."""
+        self._spawn(self._announce_inner(accion, part_pk, location_pk, quantity, phrase))
+
+    async def _announce_inner(self, accion, part_pk, location_pk, quantity, phrase) -> None:
+        try:
+            part = await self.api.get_part(part_pk)
+        except InvenTreeError:
+            return
+        location = self.locations.get(location_pk)
+        text = spoken_action(accion, part.name, location.name if location else "", quantity, phrase)
+        if text and location is not None:
+            self.on_announce({"accion": accion, "pieza": part.name, "cajon": location.name, "cantidad": quantity, "frase": text})
 
     async def contenido(self, direccion: int) -> dict:
         return await self._bounded(self._contenido(direccion), {"cajon": None, "piezas": [], "frase": DOWN_PHRASE})
@@ -311,17 +331,23 @@ class Cajonera:
     async def anadir(self, pieza_pk: int, direccion: int, cantidad: float | None) -> dict:
         if cantidad is None or cantidad <= 0:
             return {"frase": INVALID_QTY, "hecho": False}
-        return await self._write(lambda: add_to_drawer(self.api, pieza_pk, direccion, cantidad, self.locations))
+        return await self._write(
+            lambda: add_to_drawer(self.api, pieza_pk, direccion, cantidad, self.locations), announce=("anadir", cantidad)
+        )
 
     async def actualizar(self, pieza_pk: int, direccion: int, cantidad: float | None) -> dict:
         if cantidad is None or cantidad < 0:
             return {"frase": INVALID_QTY, "hecho": False}
-        return await self._write(lambda: count_drawer(self.api, pieza_pk, direccion, cantidad, self.locations))
+        return await self._write(
+            lambda: count_drawer(self.api, pieza_pk, direccion, cantidad, self.locations), announce=("actualizar", cantidad)
+        )
 
     async def mover(self, pieza_pk: int, desde: int, hasta: int, cantidad: float | None = None) -> dict:
         if cantidad is not None and cantidad <= 0:
             return {"frase": INVALID_QTY, "hecho": False}
-        return await self._write(lambda: move_between(self.api, pieza_pk, desde, hasta, cantidad, self.locations))
+        return await self._write(
+            lambda: move_between(self.api, pieza_pk, desde, hasta, cantidad, self.locations), announce=("mover", cantidad)
+        )
 
     async def pieza_crear(
         self,
@@ -357,14 +383,16 @@ class Cajonera:
         changes = {key: value for key, value in changes.items() if value is not None}
         return await self._write(lambda: edit_part(self.api, pieza_pk, changes), maybe=MAYBE_SAVED)
 
-    async def _write(self, op, with_part_pk: bool = False, maybe: str = MAYBE_STOCK) -> dict:
-        """Run a stock or catalog write under the deadline and apply its side effects."""
+    async def _write(self, op, with_part_pk: bool = False, maybe: str = MAYBE_STOCK, announce=None) -> dict:
+        """Run a stock or catalog write under the deadline and apply its side effects.
+
+        `announce` is (action, quantity) for a stock change done by hand, which is then said aloud."""
         timeout = {"frase": maybe, "hecho": False}
         if with_part_pk:
             timeout["pieza_pk"] = None
-        return await self._bounded(self._write_inner(op, with_part_pk), timeout)
+        return await self._bounded(self._write_inner(op, with_part_pk, announce), timeout)
 
-    async def _write_inner(self, op, with_part_pk: bool) -> dict:
+    async def _write_inner(self, op, with_part_pk: bool, announce=None) -> dict:
         if not await self._ready():
             answer = {"frase": DOWN_PHRASE, "hecho": False}
             if with_part_pk:
@@ -377,6 +405,8 @@ class Cajonera:
             if result.part_pk is not None and result.location_pk is not None:
                 self.context = Context(result.part_pk, result.location_pk, self.now())
             self._spawn(self.refresh_low())
+            if announce and result.part_pk is not None and result.location_pk is not None:
+                self._announce(announce[0], result.part_pk, result.location_pk, announce[1], result.phrase)
         answer = {"frase": result.phrase, "hecho": result.done}
         if with_part_pk:
             answer["pieza_pk"] = result.part_pk

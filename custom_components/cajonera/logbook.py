@@ -19,7 +19,7 @@ def async_describe_events(hass: HomeAssistant, async_describe_event) -> None:
         order = data.get("accion", "?")
         done = "hecho" if data.get("hecho") else "sin cambios"
         return {
-            LOGBOOK_ENTRY_NAME: "Cajonera (voz)",
+            LOGBOOK_ENTRY_NAME: "Cajonera (tarjeta)" if data.get("origen") == "panel" else "Cajonera (voz)",
             LOGBOOK_ENTRY_MESSAGE: f"{order} ({done}): {data.get('frase', '')}",
         }
 

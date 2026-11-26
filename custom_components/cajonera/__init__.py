@@ -108,8 +108,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             hass, "\n".join(f"- {n}" for n in notices), title="Cajonera", notification_id="cajonera_sync"
         )
 
+    @callback
+    def on_announce(data: dict) -> None:
+        # A change made by hand on the card: an automation can say `frase` on an Echo (see README).
+        hass.bus.async_fire("cajonera_orden", {**data, "origen": "panel", "hecho": True})
+
     simulator = DrawerSimulator(drawers)
-    cajonera = Cajonera(api, simulator, now=dt_util.now, on_notices=on_notices, on_change=on_change)
+    cajonera = Cajonera(
+        api, simulator, now=dt_util.now, on_notices=on_notices, on_change=on_change, on_announce=on_announce
+    )
     simulator.add_listener(on_change)
     hass.data[DOMAIN] = cajonera
 
@@ -206,7 +213,7 @@ def _register_services(hass: HomeAssistant, cajonera: Cajonera) -> None:
         )
         # One Logbook line per voice order (see logbook.py): what was asked and what Alexa was told.
         hass.bus.async_fire("cajonera_orden", {
-            "accion": d["accion"], "texto": d.get("texto"), "pieza_pk": d.get("pieza_pk"),
+            "origen": "voz", "accion": d["accion"], "texto": d.get("texto"), "pieza_pk": d.get("pieza_pk"),
             "cantidad": d.get("cantidad"), "cajon": d.get("cajon"),
             "frase": answer.get("frase"), "hecho": bool(answer.get("hecho")),
         })
